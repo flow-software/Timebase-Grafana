@@ -46,10 +46,23 @@ To rebuild the backend, stop the dev Grafana first (`docker stop flowsoftware-ti
 
 To package shareable zips (with `INSTALL.md` inside each), run `scripts/package.py` after a full build; see the command at the top of that file.
 
+## CI and releases
+
+The workflows live at the repo root in `.github/workflows/historian-*.yml`. Every push to `main` that touches `Historian/` builds, lints, tests and packages the plugin; the zips are attached to the workflow run as the `historian-plugin` artifact.
+
+To publish a download, bump `version` in `package.json`, add a matching section to `CHANGELOG.md`, commit, then push a tag:
+
+```sh
+git tag historian-v1.0.1
+git push origin historian-v1.0.1
+```
+
+That creates a GitHub Release with the per-platform zips, `SHA256SUMS.txt` and `INSTALL.md`. The tag must match the `package.json` version or the release fails.
+
 ## Publishing
 
 Before submitting to the Grafana plugin catalog:
 
 1. The plugin ID prefix (`flowsoftware`) must match the Grafana.com organisation slug that signs it.
 2. Add screenshots to `src/img` and list them in `src/plugin.json`.
-3. Build all platforms, sign with `npm run sign` (needs a `GRAFANA_ACCESS_POLICY_TOKEN`), and run the [plugin validator](https://github.com/grafana/plugin-validator). The workflow in `.github/workflows/release.yml` does this on a version tag.
+3. Build all platforms, sign with `npm run sign` (needs a `GRAFANA_ACCESS_POLICY_TOKEN`), and run the [plugin validator](https://github.com/grafana/plugin-validator). The release workflow does not sign yet; add `npm run sign` to `historian-build.yml` once the token exists.

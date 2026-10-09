@@ -1,0 +1,21 @@
+name: Historian CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Historian/**'
+      - '.github/workflows/historian-*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Historian/**'
+      - '.github/workflows/historian-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/historian-build.yml

@@ -1,0 +1,68 @@
+# Builds, tests and packages the Historian plugin. Called by historian-ci.yml
+# and historian-release.yml; the zips are uploaded as the "historian-plugin"
+# workflow artifact.
+name: Historian build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, lint, test and package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Historian
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: Historian/.nvmrc
+          cache: npm
+          cache-dependency-path: Historian/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+      - name: Check types
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:ci
+      - name: Build frontend
+        run: npm run build
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Historian/go.mod
+          cache-dependency-path: Historian/go.sum
+
+      - name: Lint backend
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: latest
+          working-directory: Historian
+          args: ./...
+
+      - name: Test backend
+        run: go test ./...
+
+      - name: Build backend (all platforms)
+        run: |
+          go install github.com/magefile/mage@v1.15.0
+          mage -v buildAll
+
+      - name: Package zips
+        run: python3 scripts/package.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: historian-plugin
+          path: Historian/artifacts
+          retention-days: 30
