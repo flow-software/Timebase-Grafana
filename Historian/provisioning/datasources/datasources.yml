@@ -1,0 +1,41 @@
+apiVersion: 1
+
+# Development datasources for the local Timebase Docker stack, one per API.
+# The dev Grafana joins the Timebase network (docker-compose.timebase.yaml), so
+# the historian and Pulse are reached by container name. The client secret is
+# passed in as an environment variable and never written to a file.
+datasources:
+  - name: 'Timebase i3X'
+    type: 'flowsoftware-timebasei3x-datasource'
+    uid: 'timebase-i3x-dev'
+    access: proxy
+    isDefault: true
+    orgId: 1
+    version: 1
+    editable: true
+    url: 'https://historian:4512/i3x/v1'
+    jsonData:
+      apiType: 'i3x'
+      authType: 'clientCredentials'
+      tokenUrl: 'https://pulse:4542/auth/token'
+      clientId: '${TIMEBASE_CLIENT_ID}'
+      tlsSkipVerify: true
+    secureJsonData:
+      clientSecret: '${TIMEBASE_CLIENT_SECRET}'
+
+  - name: 'Timebase (native)'
+    type: 'flowsoftware-timebasei3x-datasource'
+    uid: 'timebase-native-dev'
+    access: proxy
+    orgId: 1
+    version: 1
+    editable: true
+    url: 'https://historian:4512'
+    jsonData:
+      apiType: 'timebase'
+      authType: 'clientCredentials'
+      tokenUrl: 'https://pulse:4542/auth/token'
+      clientId: '${TIMEBASE_CLIENT_ID}'
+      tlsSkipVerify: true
+    secureJsonData:
+      clientSecret: '${TIMEBASE_CLIENT_SECRET}'

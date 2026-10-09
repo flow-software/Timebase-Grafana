@@ -1,0 +1,19 @@
+# Local development against a running Timebase Docker stack. Layer it on the
+# base file; CI uses the base file alone because it has no Timebase stack:
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.timebase.yaml up -d --build
+services:
+  grafana:
+    environment:
+      TIMEBASE_CLIENT_ID: ${TIMEBASE_CLIENT_ID:-Historian}
+      TIMEBASE_CLIENT_SECRET: ${TIMEBASE_CLIENT_SECRET:-}
+    networks:
+      - default
+      - timebase
+
+# The Timebase Docker stack's network, so "historian" and "pulse" resolve.
+# Set TIMEBASE_NETWORK if your stack's compose project is named differently.
+networks:
+  timebase:
+    external: true
+    name: ${TIMEBASE_NETWORK:-timebase_2-0-rc_default}
