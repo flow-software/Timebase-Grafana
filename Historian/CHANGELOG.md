@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.0 (2026-10-21)
+
+- Tree browser: filter tags by their fields (the historian's tag metadata, such as Site or Area). Add a field from "Filter by a tag field", then pick values as chips, or from a drop-down when a field has many values. Values of one field match any, fields combine, and counts narrow as you pick. Filters only change what is listed; queries still read the tags you tick. Native Timebase API only.
+- Tree browser: hovering a tag shows its fields.
+
 ## 1.0.0 (2026-10-09)
 
 Initial release.

@@ -79,11 +79,13 @@ type TagValue struct {
 
 // Tag is a tag's definition. Units maps values to labels: a single entry is
 // the engineering unit ({"1":"°F"}); several entries label discrete values
-// ({"0":"Off","1":"On"}).
+// ({"0":"Off","1":"On"}). Fields is free-form metadata such as
+// {"Site":"Southlake","Area":"Filling"}, usually set by the collector.
 type Tag struct {
 	Name        string            `json:"n"`
 	Description string            `json:"d"`
 	Units       map[string]string `json:"u"`
+	Fields      map[string]string `json:"fl"`
 	Type        string            `json:"t"`
 	Last        *TagValue         `json:"l"`
 }

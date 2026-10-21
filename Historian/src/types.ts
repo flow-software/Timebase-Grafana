@@ -58,4 +58,6 @@ export interface ObjectOption {
   description?: string;
   /** Engineering unit; native API only. */
   unit?: string;
+  /** Tag metadata such as Site or Area; native API only. */
+  fields?: Record<string, string>;
 }

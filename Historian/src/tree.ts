@@ -132,3 +132,10 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
     });
   return walk(nodes);
 }
+
+/** Drops folders with no tags at or below them, e.g. datasets a field filter leaves empty. */
+export function pruneEmpty(nodes: TreeNode[]): TreeNode[] {
+  return nodes
+    .filter((n) => n.isTag || n.tagIds.length > 0)
+    .map((n) => (n.isTag ? n : { ...n, children: pruneEmpty(n.children) }));
+}

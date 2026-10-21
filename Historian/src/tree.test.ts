@@ -1,4 +1,4 @@
-import { buildTree, filterTree, TreeNode } from './tree';
+import { buildTree, filterTree, pruneEmpty, TreeNode } from './tree';
 import { ObjectOption } from './types';
 
 const tag = (elementId: string, parentId?: string): ObjectOption => ({
@@ -81,15 +81,17 @@ describe('buildTree', () => {
       tag('default:Boiler.DeviceHealth.Code', 'default'),
     ]);
 
-    expect(outline(tree)).toEqual(['+ default', '  + Boiler', '    + DeviceHealth', '      - Code', '    - DeviceHealth']);
+    expect(outline(tree)).toEqual([
+      '+ default',
+      '  + Boiler',
+      '    + DeviceHealth',
+      '      - Code',
+      '    - DeviceHealth',
+    ]);
   });
 
   it('survives parent cycles and missing parents', () => {
-    const tree = buildTree([
-      folder('a', 'b', 'A'),
-      folder('b', 'a', 'B'),
-      tag('x', 'nowhere'),
-    ]);
+    const tree = buildTree([folder('a', 'b', 'A'), folder('b', 'a', 'B'), tag('x', 'nowhere')]);
 
     expect(outline(tree).sort()).toEqual(['  + A', '+ B', '- x'].sort());
   });
@@ -120,5 +122,17 @@ describe('filterTree', () => {
 
   it('returns the tree unchanged for an empty query', () => {
     expect(filterTree(tree, '  ')).toBe(tree);
+  });
+});
+
+describe('pruneEmpty', () => {
+  it('drops folders left without tags', () => {
+    const tree = buildTree([
+      { elementId: 'full', displayName: 'full', type: 'Dataset', isFolder: true },
+      { elementId: 'empty', displayName: 'empty', type: 'Dataset', isFolder: true },
+      { elementId: 'full:A.B', displayName: 'A.B', type: 'Tag', parentId: 'full', isFolder: false },
+    ]);
+    expect(pruneEmpty(tree).map((n) => n.label)).toEqual(['full']);
+    expect(pruneEmpty(tree)[0].children[0].tagIds).toEqual(['full:A.B']);
   });
 });

@@ -20,9 +20,9 @@ import (
 func fakeNative(t *testing.T, dataCalls *atomic.Int32) *httptest.Server {
 	t.Helper()
 	tags := map[string]string{
-		"Line1.Speed":   `{"n":"Line1.Speed","d":"Conveyor speed","u":{"1":"m/s"},"t":"System.Double"}`,
+		"Line1.Speed":   `{"n":"Line1.Speed","d":"Conveyor speed","u":{"1":"m/s"},"fl":{"Site":"Southlake","Area":"Filling"},"t":"System.Double"}`,
 		"Dataset.State": `{"n":"Dataset.State","d":"System state","u":{"0":"Recovering","1":"Starting","2":"Running"},"t":"System.Double"}`,
-		"Batch.Code":    `{"n":"Batch.Code","t":"System.String"}`,
+		"Batch.Code":    `{"n":"Batch.Code","fl":{"Site":"Southlake","Area":"Packing, Line 2"},"t":"System.String"}`,
 		"Quiet.Tag":     `{"n":"Quiet.Tag","t":"System.Double"}`,
 	}
 	samples := map[string]string{
@@ -187,7 +187,7 @@ func TestNativeObjectsFlagSystemTags(t *testing.T) {
 	if o := byID["plant:Dataset.State"]; !o.IsSystem || o.ParentID != "plant" {
 		t.Fatalf("system tag entry %+v", o)
 	}
-	if o := byID["plant:Line1.Speed"]; o.IsSystem || o.Unit != "m/s" || o.Description != "Conveyor speed" || o.DisplayName != "Line1.Speed" {
+	if o := byID["plant:Line1.Speed"]; o.IsSystem || o.Unit != "m/s" || o.Description != "Conveyor speed" || o.DisplayName != "Line1.Speed" || o.Fields["Area"] != "Filling" {
 		t.Fatalf("user tag entry %+v", o)
 	}
 }

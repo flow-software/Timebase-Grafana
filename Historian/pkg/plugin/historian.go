@@ -42,6 +42,8 @@ type objectOption struct {
 	IsSystem    bool   `json:"isSystem,omitempty"`
 	Description string `json:"description,omitempty"`
 	Unit        string `json:"unit,omitempty"`
+	// Fields is the tag's metadata (Site, Area, ...); native API only.
+	Fields map[string]string `json:"fields,omitempty"`
 }
 
 type seriesResult struct {
@@ -167,6 +169,7 @@ func (h nativeHistorian) Objects(ctx context.Context) ([]objectOption, error) {
 					IsSystem:    system,
 					Description: t.Description,
 					Unit:        unit,
+					Fields:      t.Fields,
 				})
 			}
 		}
