@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.0 (2026-10-22)
+
+- Tree browser: field filters are kept when the browser is closed and reopened, and are shared by every query editor using the same data source, for the rest of the browser session. A kept filter on a field the tags no longer have is ignored rather than hiding every tag.
+
 ## 2.0.0 (2026-10-22)
 
 Breaking: the plugin ID is now `flowsoftware-timebase-datasource` (was `flowsoftware-timebasei3x-datasource`), so it installs as a new plugin. Data sources, dashboards and alert rules made with 1.x have to be recreated or pointed at the new type, and the `allow_loading_unsigned_plugins` setting needs the new ID.

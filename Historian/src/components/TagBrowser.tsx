@@ -26,6 +26,10 @@ interface Props {
   selected: string[];
   onApply: (elementIds: string[]) => void;
   onDismiss: () => void;
+  /** Field filters to start with, kept by the query editor between openings. */
+  initialPicks?: FieldPicks;
+  /** Called with the field filters whenever they change. */
+  onPicksChange?: (picks: FieldPicks) => void;
 }
 
 // Rendering thousands of rows at once makes the modal sluggish; past this
@@ -40,7 +44,7 @@ interface Row {
   depth: number;
 }
 
-export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss }: Props) {
+export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, initialPicks, onPicksChange }: Props) {
   const styles = useStyles2(getStyles);
   const systemIds = useMemo(() => {
     const isSystem = systemTagMatcher(objects);
@@ -57,7 +61,19 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss }: Pr
 
   // Field filters (native API only): within a field any picked value matches,
   // across fields all must. They narrow what is listed, not what the query reads.
-  const [picks, setPicks] = useState<FieldPicks>({});
+  const [storedPicks, setStoredPicks] = useState<FieldPicks>(() => initialPicks ?? {});
+  // A kept filter on a field no listed tag has would hide everything with no
+  // row to remove it, so only fields the tags still use apply.
+  const fieldKeys = useMemo(() => new Set(shown.flatMap((o) => Object.keys(o.fields ?? {}))), [shown]);
+  const picks = useMemo(
+    () => Object.fromEntries(Object.entries(storedPicks).filter(([k]) => fieldKeys.has(k))),
+    [storedPicks, fieldKeys]
+  );
+  const setPicks = (update: (prev: FieldPicks) => FieldPicks) => {
+    const next = update(storedPicks);
+    setStoredPicks(next);
+    onPicksChange?.(next);
+  };
   const picking = Object.values(picks).some((v) => v.length > 0);
   const facets = useMemo(
     () =>

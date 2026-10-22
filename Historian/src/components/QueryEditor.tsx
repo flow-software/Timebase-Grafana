@@ -6,6 +6,8 @@ import { Button, ComboboxOption, InlineField, InlineSwitch, MultiCombobox, Stack
 
 import { DataSource } from '../datasource';
 import { I3xOptions, I3xQuery, ObjectOption } from '../types';
+import { FieldPicks } from '../fieldFacets';
+import { loadFieldPicks, saveFieldPicks } from '../filterStore';
 import { TagBrowser } from './TagBrowser';
 
 type Props = QueryEditorProps<DataSource, I3xQuery, I3xOptions>;
@@ -15,6 +17,8 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery }: Props) 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [browsing, setBrowsing] = useState(false);
+  // The tree browser's field filters outlive the browser itself, so reopening it keeps them.
+  const [fieldPicks, setFieldPicks] = useState<FieldPicks>(() => loadFieldPicks(datasource.uid));
   const styles = useStyles2(getStyles);
 
   useEffect(() => {
@@ -97,6 +101,11 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery }: Props) 
           isOpen
           objects={objects}
           selected={elementIds}
+          initialPicks={fieldPicks}
+          onPicksChange={(picks) => {
+            setFieldPicks(picks);
+            saveFieldPicks(datasource.uid, picks);
+          }}
           onDismiss={() => setBrowsing(false)}
           onApply={(ids) => {
             setBrowsing(false);
