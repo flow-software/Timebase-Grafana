@@ -13,7 +13,11 @@ const apiOptions: Array<SelectableValue<ApiType>> = [
     value: 'timebase',
     description: 'Native Timebase API: adds units, descriptions and state labels',
   },
-  { label: 'i3X', value: 'i3x', description: 'The i3X standard API; also works with other i3X servers' },
+  {
+    label: 'i3X (preview)',
+    value: 'i3x',
+    description: 'The i3X standard API; also works with other i3X servers. Its responses may still change.',
+  },
 ];
 
 const authOptions: Array<SelectableValue<AuthType>> = [
@@ -26,8 +30,8 @@ export function ConfigEditor({ options, onOptionsChange }: Props) {
   const { jsonData, secureJsonFields } = options;
   const secureJsonData = options.secureJsonData ?? {};
   const authType = jsonData.authType ?? 'clientCredentials';
-  // Unset means i3X: datasources created before the choice existed used it.
-  const apiType = jsonData.apiType ?? 'i3x';
+  // Unset means the native API, the default for new datasources.
+  const apiType = jsonData.apiType ?? 'timebase';
 
   const setJson = <K extends keyof I3xOptions>(key: K, value: I3xOptions[K]) =>
     onOptionsChange({ ...options, jsonData: { ...jsonData, [key]: value } });

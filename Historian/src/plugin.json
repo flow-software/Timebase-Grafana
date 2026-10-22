@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
   "name": "Timebase Historian",
-  "id": "flowsoftware-timebasei3x-datasource",
+  "id": "flowsoftware-timebase-datasource",
   "metrics": true,
   "alerting": true,
   "streaming": true,
   "backend": true,
-  "executable": "gpx_timebasei3x",
+  "executable": "gpx_timebase",
   "info": {
     "description": "Query tag history from the Timebase Historian through its native API or the i3X standard API, with automatic OAuth token renewal and Grafana alerting.",
     "author": {
@@ -22,7 +22,11 @@
     "links": [
       { "name": "Timebase", "url": "https://timebase.flow-software.com" }
     ],
-    "screenshots": [],
+    "screenshots": [
+      { "name": "Dashboard", "path": "img/screenshots/dashboard.png" },
+      { "name": "Tree browser with field filters", "path": "img/screenshots/tree-browser.png" },
+      { "name": "Data source settings", "path": "img/screenshots/config.png" }
+    ],
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },

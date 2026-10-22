@@ -12,7 +12,7 @@ import json
 import os
 import zipfile
 
-PLUGIN_ID = "flowsoftware-timebasei3x-datasource"
+PLUGIN_ID = "flowsoftware-timebase-datasource"
 DIST, OUT = "dist", "artifacts"
 
 
@@ -46,7 +46,7 @@ def main():
         raise SystemExit("no backend binaries in dist/; run mage -v first")
     common = [n for n in names if n not in binaries and n != "go_plugin_build_manifest" and not n.endswith(".map")]
 
-    # gpx_timebasei3x_windows_amd64.exe -> windows_amd64
+    # gpx_timebase_windows_amd64.exe -> windows_amd64
     targets = {b.split("_", 2)[2].removesuffix(".exe"): [b] for b in binaries}
     targets["any"] = binaries
 

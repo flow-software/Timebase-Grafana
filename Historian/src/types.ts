@@ -22,7 +22,7 @@ export const DEFAULT_QUERY: Partial<I3xQuery> = {
 
 export type AuthType = 'clientCredentials' | 'bearerToken' | 'none';
 
-/** Which historian API a datasource talks to. Unset means i3X, the original behaviour. */
+/** Which historian API a datasource talks to. Unset means the native Timebase API. */
 export type ApiType = 'timebase' | 'i3x';
 
 /** Settings stored in jsonData. The API base URL is the datasource's top-level url. */

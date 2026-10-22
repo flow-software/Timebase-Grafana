@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/flow-software/Timebase-Grafana/Historian/pkg/auth"
@@ -89,6 +88,7 @@ type Datasource struct {
 	httpClient *http.Client
 	authType   string
 	configErr  error
+	objectList objectCache
 }
 
 func (d *Datasource) Dispose() {
@@ -243,10 +243,9 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		return reply(http.StatusBadRequest, map[string]string{"message": d.configErr.Error()})
 	}
 
-	objects, err := d.historian.Objects(ctx)
+	objects, err := d.objectList.get(ctx, req.URL, d.historian.Objects)
 	if err != nil {
 		return reply(http.StatusBadGateway, map[string]string{"message": err.Error()})
 	}
-	sort.Slice(objects, func(i, j int) bool { return objects[i].ElementID < objects[j].ElementID })
 	return reply(http.StatusOK, objects)
 }

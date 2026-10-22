@@ -53,9 +53,9 @@ func LoadPluginSettings(source backend.DataSourceInstanceSettings) (*PluginSetti
 	if settings.AuthType == "" {
 		settings.AuthType = AuthClientCredentials
 	}
-	// Datasources created before the API choice existed all used i3X.
+	// The native API is the default; i3X has to be chosen.
 	if settings.APIType == "" {
-		settings.APIType = APII3X
+		settings.APIType = APITimebase
 	}
 
 	// People paste the whole header value; the "Bearer " prefix is added on send.

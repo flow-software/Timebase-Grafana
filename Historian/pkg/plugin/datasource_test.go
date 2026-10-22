@@ -84,7 +84,7 @@ func newTestDatasource(t *testing.T, srv *httptest.Server, secret string) *Datas
 	t.Helper()
 	inst, err := NewDatasource(context.Background(), backend.DataSourceInstanceSettings{
 		URL:                     srv.URL + "/i3x/v1/",
-		JSONData:                []byte(fmt.Sprintf(`{"authType":"clientCredentials","tokenUrl":%q,"clientId":"Historian"}`, srv.URL+"/auth/token")),
+		JSONData:                []byte(fmt.Sprintf(`{"apiType":"i3x","authType":"clientCredentials","tokenUrl":%q,"clientId":"Historian"}`, srv.URL+"/auth/token")),
 		DecryptedSecureJSONData: map[string]string{"clientSecret": secret},
 	})
 	if err != nil {
