@@ -10,7 +10,7 @@ A backend data source plugin for Timebase Atlas: entities, current values and re
 | `src` | Config editor, query editor, browse modal (`InstanceBrowser`, `InstanceField`, `TypeField`), Cypher helpers (`cypher.ts`), tree helpers (`tree.ts`). |
 | `provisioning` | Dev data source (uid `atlas-dev`) and the demo dashboard. |
 
-Why Cypher and not `/values` for values: `/values` leaves out compound properties without a `Value` part (MaintainX `LiveAsset` on CNC01 returns nothing), and `/instances` has no labels. Cypher returns both.
+Why Cypher and not `/values` for values: `/values` leaves out compound properties without a `Value` part (MaintainX `LiveAsset` on CNC01 returns nothing; flow-software/Timebase#2395), and `/instances` has no labels. Cypher returns both.
 
 ## Build
 
