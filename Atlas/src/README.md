@@ -65,4 +65,4 @@ Values are read when the panel refreshes. Set the dashboard to refresh every few
 - A whole-domain graph returns at most 2000 relationships unless you raise **Limit**. Graphs around an instance stop at the same limit.
 - Cypher results are capped at 50,000 rows.
 - Atlas returns internal numbers instead of ids for Cypher paths (`p = (...)`) and variable-length relationships (`-[r*1..3]-`). Use the Graph query with a depth instead, or return the nodes at each end.
-- `n.entityLabel` returns null in Cypher; return the node `n` itself to get its label.
+- `n.entityLabel` returns null in Cypher; return the node `n` itself to get its label ([flow-software/Timebase#2396](https://github.com/flow-software/Timebase/issues/2396)).
