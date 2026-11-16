@@ -1,0 +1,25 @@
+apiVersion: 1
+
+# Development data source for the local Timebase Docker stack. The dev Grafana
+# joins the Timebase network (docker-compose.timebase.yaml), so Atlas and Pulse
+# are reached by container name. The client secret is passed in as an
+# environment variable and never written to a file.
+datasources:
+  - name: 'Timebase Atlas (dev)'
+    type: 'flowsoftware-atlas-datasource'
+    uid: 'atlas-dev'
+    access: proxy
+    isDefault: true
+    orgId: 1
+    version: 1
+    editable: true
+    url: 'https://atlas:4552'
+    jsonData:
+      authType: 'clientCredentials'
+      tokenUrl: 'https://pulse:4542/auth/token'
+      clientId: '${ATLAS_CLIENT_ID}'
+      defaultBranch: 'main'
+      defaultDomain: '${ATLAS_DEFAULT_DOMAIN}'
+      tlsSkipVerify: true
+    secureJsonData:
+      clientSecret: '${ATLAS_CLIENT_SECRET}'

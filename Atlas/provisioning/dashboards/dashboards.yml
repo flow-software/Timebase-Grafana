@@ -1,0 +1,12 @@
+apiVersion: 1
+
+# The demo dashboard in this folder. It expects the provisioned data source
+# (uid atlas-dev) and the CESMII workshop example domains.
+providers:
+  - name: 'Atlas demo'
+    orgId: 1
+    folder: ''
+    type: file
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
