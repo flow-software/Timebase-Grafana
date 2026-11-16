@@ -1,0 +1,21 @@
+name: Atlas CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Atlas/**'
+      - '.github/workflows/atlas-*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Atlas/**'
+      - '.github/workflows/atlas-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/atlas-build.yml

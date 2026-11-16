@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "datasource",
+  "name": "Timebase Atlas",
+  "id": "flowsoftware-atlas-datasource",
+  "metrics": true,
+  "backend": true,
+  "executable": "gpx_atlas",
+  "info": {
+    "description": "Show Timebase Atlas entities, their current values and the relationships between them, with a node graph, tables and read-only Cypher queries.",
+    "author": {
+      "name": "Flow Software",
+      "url": "https://www.flow-software.com"
+    },
+    "keywords": ["datasource", "timebase", "atlas", "graph", "cypher", "industrial", "iiot", "information model"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [{ "name": "Timebase", "url": "https://timebase.flow-software.com" }],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=12.3.0",
+    "plugins": []
+  }
+}

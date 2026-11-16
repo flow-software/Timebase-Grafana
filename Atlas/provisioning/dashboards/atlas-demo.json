@@ -1,0 +1,180 @@
+{
+  "panels": [
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "colorBy": "quality",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "depth": 1,
+          "instanceId": "$machine",
+          "queryType": "graph",
+          "refId": "A",
+          "relationshipNodes": true
+        }
+      ],
+      "title": "Around $machine: quality rings, relationship names",
+      "type": "nodeGraph"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 13,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "colorBy": "type",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "depth": 1,
+          "instanceId": "$machine",
+          "queryType": "graph",
+          "refId": "A",
+          "relationshipNodes": true
+        }
+      ],
+      "title": "Around $machine: colour = type, relationship names shown",
+      "type": "nodeGraph"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "instanceId": "$machine",
+          "queryType": "values",
+          "refId": "A",
+          "scope": "children"
+        }
+      ],
+      "title": "$machine and everything it contains",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "entityType": "CNCMachine",
+          "layout": "columns",
+          "queryType": "values",
+          "refId": "A",
+          "scope": "type"
+        }
+      ],
+      "title": "All CNC machines (row per instance)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "id": 5,
+      "targets": [
+        {
+          "colorBy": "type",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "depth": 1,
+          "domain": "chamdor",
+          "instanceId": "FB-BT-001",
+          "lineColorBy": "type",
+          "queryType": "graph",
+          "refId": "A",
+          "relationshipNodes": true
+        }
+      ],
+      "title": "Blend tank 1 (chamdor): lines by relationship type, names shown",
+      "type": "nodeGraph"
+    }
+  ],
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "CNC02",
+          "value": "CNC02"
+        },
+        "datasource": {
+          "type": "flowsoftware-atlas-datasource",
+          "uid": "atlas-dev"
+        },
+        "name": "machine",
+        "query": {
+          "cypher": "MATCH (m:CNCMachine) RETURN m.entityId",
+          "format": "table",
+          "queryType": "cypher",
+          "refId": "V"
+        },
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "title": "Timebase Atlas demo",
+  "uid": "atlas-demo",
+  "description": "First-pass demo of the Timebase Atlas data source on the CESMII workshop domains (cesmii-workshop, chamdor).",
+  "refresh": ""
+}

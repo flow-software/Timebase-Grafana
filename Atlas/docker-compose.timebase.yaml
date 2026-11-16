@@ -1,0 +1,21 @@
+# Local development against a running Timebase Docker stack. Layer it on the
+# base file; CI uses the base file alone because it has no Timebase stack:
+#
+#   $env:ATLAS_CLIENT_SECRET = "<Atlas client secret>"
+#   docker compose -f docker-compose.yaml -f docker-compose.timebase.yaml up -d --build
+services:
+  grafana:
+    environment:
+      ATLAS_CLIENT_ID: ${ATLAS_CLIENT_ID:-Atlas}
+      ATLAS_CLIENT_SECRET: ${ATLAS_CLIENT_SECRET:-}
+      ATLAS_DEFAULT_DOMAIN: ${ATLAS_DEFAULT_DOMAIN:-cesmii-workshop}
+    networks:
+      - default
+      - timebase
+
+# The Timebase Docker stack's network, so "atlas" and "pulse" resolve.
+# Set TIMEBASE_NETWORK if your stack's compose project is named differently.
+networks:
+  timebase:
+    external: true
+    name: ${TIMEBASE_NETWORK:-timebase_2-0-rc_default}

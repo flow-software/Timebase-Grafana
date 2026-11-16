@@ -1,0 +1,68 @@
+# Builds, tests and packages the Atlas plugin. Called by atlas-ci.yml
+# and a future atlas-release.yml; the zips are uploaded as the "atlas-plugin"
+# workflow artifact.
+name: Atlas build
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, lint, test and package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Atlas
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: Atlas/.nvmrc
+          cache: npm
+          cache-dependency-path: Atlas/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+      - name: Check types
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:ci
+      - name: Build frontend
+        run: npm run build
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Atlas/go.mod
+          cache-dependency-path: Atlas/go.sum
+
+      - name: Lint backend
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: latest
+          working-directory: Atlas
+          args: ./...
+
+      - name: Test backend
+        run: go test ./...
+
+      - name: Build backend (all platforms)
+        run: |
+          go install github.com/magefile/mage@v1.15.0
+          mage -v buildAll
+
+      - name: Package zips
+        run: python3 scripts/package.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atlas-plugin
+          path: Atlas/artifacts
+          retention-days: 30

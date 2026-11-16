@@ -1,0 +1,212 @@
+import React, { useMemo, useState } from 'react';
+import { css, cx } from '@emotion/css';
+import { GrafanaTheme2 } from '@grafana/data';
+import { Alert, Button, Icon, IconButton, Input, LoadingPlaceholder, Modal, useStyles2 } from '@grafana/ui';
+
+import { ancestorsOf, buildTree, filterTree, nodeName, TreeItem } from '../tree';
+import { TreeNodeData } from '../types';
+
+interface Props {
+  isOpen: boolean;
+  title: string;
+  nodes?: TreeNodeData[];
+  loading: boolean;
+  error?: string;
+  selected?: string;
+  onSelect: (id: string) => void;
+  onRefresh: () => void;
+  onDismiss: () => void;
+  /** Rows that can be picked; others only expand and collapse. Default: all. */
+  canSelect?: (n: TreeNodeData) => boolean;
+  /** The grey text after the name. Default: id (when it differs) and type. */
+  metaOf?: (n: TreeNodeData) => string;
+  /** What the pickable rows are called in the count, e.g. "types". */
+  noun?: string;
+}
+
+/** Rows shown while filtering; more than this is slow and not useful to scroll. */
+const MAX_FILTERED_ROWS = 500;
+
+/**
+ * A modal tree of a domain's instances, nested by containment like the
+ * Atlas Instances view. Picking a row selects it and closes the modal.
+ */
+export function InstanceBrowser(props: Props) {
+  // Remount on each open so the filter and expansion start fresh.
+  return props.isOpen ? <BrowserBody {...props} /> : null;
+}
+
+function BrowserBody({
+  title,
+  nodes,
+  loading,
+  error,
+  selected,
+  onSelect,
+  onRefresh,
+  onDismiss,
+  canSelect = () => true,
+  metaOf = defaultMeta,
+  noun = 'instances',
+}: Props) {
+  const styles = useStyles2(getStyles);
+  const [filter, setFilter] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    selected && nodes ? new Set(ancestorsOf(nodes, selected)) : new Set()
+  );
+
+  const roots = useMemo(() => buildTree(nodes ?? []), [nodes]);
+  const filtered = useMemo(() => filterTree(roots, filter), [roots, filter]);
+  const filtering = filter.trim() !== '';
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+
+  // While filtering every branch is open, so each match shows in place.
+  let rowsLeft = MAX_FILTERED_ROWS;
+  const renderItem = (item: TreeItem, depth: number): React.ReactNode => {
+    if (filtering && rowsLeft-- <= 0) {
+      return null;
+    }
+    const n = item.node;
+    const hasChildren = item.children.length > 0;
+    const open = filtering || expanded.has(n.id);
+    return (
+      <li key={n.id}>
+        <div
+          className={cx(styles.row, n.id === selected && styles.selected)}
+          style={{ paddingLeft: depth * 20 }}
+          role="treeitem"
+          aria-selected={n.id === selected}
+          aria-expanded={hasChildren ? open : undefined}
+        >
+          {hasChildren ? (
+            <IconButton
+              name={open ? 'angle-down' : 'angle-right'}
+              aria-label={open ? 'Collapse' : 'Expand'}
+              disabled={filtering}
+              onClick={() => toggle(n.id)}
+            />
+          ) : (
+            <span className={styles.spacer} />
+          )}
+          <button
+            type="button"
+            className={cx(styles.pick, !canSelect(n) && styles.info)}
+            onClick={() => (canSelect(n) ? onSelect(n.id) : hasChildren && !filtering && toggle(n.id))}
+            title={canSelect(n) ? `Select ${nodeName(n)}` : undefined}
+          >
+            <span className={styles.name}>{nodeName(n)}</span>
+            <span className={styles.meta}>{metaOf(n)}</span>
+          </button>
+        </div>
+        {hasChildren && open && <ul className={styles.list}>{item.children.map((c) => renderItem(c, depth + 1))}</ul>}
+      </li>
+    );
+  };
+
+  return (
+    <Modal title={title} isOpen onDismiss={onDismiss} className={styles.modal}>
+      <div className={styles.toolbar}>
+        <Input
+          autoFocus
+          prefix={<Icon name="search" />}
+          placeholder="Filter by name, id or type"
+          value={filter}
+          onChange={(e) => setFilter(e.currentTarget.value)}
+        />
+        <IconButton name="sync" tooltip="Reload from Atlas" onClick={onRefresh} />
+      </div>
+
+      {error && (
+        <Alert severity="error" title="Could not load the instances">
+          {error}
+        </Alert>
+      )}
+      {loading && !nodes && <LoadingPlaceholder text="Loading instances…" />}
+
+      {nodes && (
+        <>
+          <div className={styles.summary}>
+            {filtering
+              ? `${filtered.matches} matches` +
+                (filtered.matches > MAX_FILTERED_ROWS ? `; refine the filter to see all` : '')
+              : `${nodes.filter(canSelect).length} ${noun}`}
+          </div>
+          <div className={styles.scroll}>
+            <ul className={styles.list} role="tree">
+              {filtered.roots.map((r) => renderItem(r, 0))}
+            </ul>
+          </div>
+        </>
+      )}
+
+      <Modal.ButtonRow>
+        <Button variant="secondary" fill="outline" onClick={onDismiss}>
+          Cancel
+        </Button>
+      </Modal.ButtonRow>
+    </Modal>
+  );
+}
+
+const getStyles = (theme: GrafanaTheme2) => ({
+  modal: css({ width: 760, maxWidth: '95vw' }),
+  toolbar: css({ display: 'flex', gap: theme.spacing(1), alignItems: 'center', marginBottom: theme.spacing(1) }),
+  summary: css({
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.bodySmall.fontSize,
+    margin: theme.spacing(0.5, 0),
+  }),
+  scroll: css({
+    height: '55vh',
+    overflowY: 'auto',
+    border: `1px solid ${theme.colors.border.weak}`,
+    borderRadius: theme.shape.radius.default,
+    padding: theme.spacing(0.5),
+  }),
+  list: css({ listStyle: 'none', margin: 0, padding: 0 }),
+  row: css({
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(0.5),
+    borderRadius: theme.shape.radius.default,
+    '&:hover': { background: theme.colors.action.hover },
+  }),
+  selected: css({ background: theme.colors.action.selected }),
+  info: css({ cursor: 'default', opacity: 0.8 }),
+  spacer: css({ display: 'inline-block', width: 20, flexShrink: 0 }),
+  pick: css({
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: theme.spacing(1),
+    flex: 1,
+    minWidth: 0,
+    padding: theme.spacing(0.5, 0.5),
+    background: 'none',
+    border: 'none',
+    color: theme.colors.text.primary,
+    textAlign: 'left',
+    cursor: 'pointer',
+  }),
+  name: css({ fontWeight: theme.typography.fontWeightMedium, whiteSpace: 'nowrap' }),
+  meta: css({
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.bodySmall.fontSize,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  }),
+});
+
+function defaultMeta(n: TreeNodeData): string {
+  return (n.label && n.label !== n.id ? `${n.id} · ` : '') + n.type;
+}
