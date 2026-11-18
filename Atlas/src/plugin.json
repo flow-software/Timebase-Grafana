@@ -4,10 +4,11 @@
   "name": "Timebase Atlas",
   "id": "flowsoftware-atlas-datasource",
   "metrics": true,
+  "alerting": true,
   "backend": true,
   "executable": "gpx_atlas",
   "info": {
-    "description": "Show Timebase Atlas entities, their current values and the relationships between them, with a node graph, tables and read-only Cypher queries.",
+    "description": "Show Timebase Atlas entities, their current values, their history and the relationships between them, with a node graph, tables, time series and read-only Cypher queries.",
     "author": {
       "name": "Flow Software",
       "url": "https://www.flow-software.com"

@@ -454,3 +454,110 @@ func TestNodeLinks(t *testing.T) {
 		t.Fatalf("relationship node id should give a clear error, got %v", r.Error)
 	}
 }
+
+func runRange(t *testing.T, ds *Datasource, q string, from, to time.Time) backend.DataResponse {
+	t.Helper()
+	resp, err := ds.QueryData(context.Background(), &backend.QueryDataRequest{Queries: []backend.DataQuery{{RefID: "A", JSON: []byte(q), TimeRange: backend.TimeRange{From: from, To: to}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.Responses["A"]
+}
+
+const prodNode = `{"entityId":"CNC02-Production","typeId":"urn:x:CNCProduction","entityLabel":"Production","FeedRate":{"Timestamp":"2026-11-18T05:00:00Z","Value":12.5,"Quality":192},"JobNumber":{"Timestamp":"2026-11-18T05:00:00Z","Value":"JOB-1","Quality":192}}`
+
+func TestHistoryRawUsesTypedMatchAndParameters(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
+		"AS value":         `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","2026-11-18T04:59:50Z",11,192],["CNC02-Production","2026-11-18T05:00:00Z",12.5,192]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 6, 0, 0, 0, time.UTC)
+	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate"],"includeQuality":true}`, to.Add(-time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	last := f.queries[len(f.queries)-1]
+	cy := last["cypher"].(string)
+	if !strings.Contains(cy, "MATCH (n:CNCProduction)") || !strings.Contains(cy, "UNWIND n.FeedRate AS v") {
+		t.Fatalf("history must use a typed MATCH: %s", cy)
+	}
+	p := last["parameters"].(map[string]any)
+	if p["from"] != "2026-11-18T05:00:00Z" || p["to"] != "2026-11-18T06:00:00Z" {
+		t.Fatalf("time window parameters = %v", p)
+	}
+	fr := r.Frames[0]
+	if fr.Name != "CNC02-Production FeedRate" || fr.Rows() != 2 || fr.Fields[0].Type() != data.FieldTypeTime {
+		t.Fatalf("frame = %s rows %d", fr.Name, fr.Rows())
+	}
+	if fr.Fields[1].Labels["instance"] != "CNC02-Production" || fr.Fields[1].Labels["property"] != "FeedRate" {
+		t.Fatalf("labels = %v", fr.Fields[1].Labels)
+	}
+	if _, qi := fr.FieldByName("Quality"); qi < 0 {
+		t.Fatal("quality field missing")
+	}
+}
+
+func TestHistoryAutoBucketsLongRanges(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
+		"relative(":        `{"columns":["id","t","avg","min","max","n"],"data":[["CNC02-Production","2026-11-17T00:00:00Z",10,5,15,3600]]}`,
+		"AS value":         `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","2026-11-17T00:00:00Z","JOB-1",192]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"],"includeMinMax":true}`, to.Add(-7*24*time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	var sawHour, sawTextRaw bool
+	for _, q := range f.queries {
+		cy := q["cypher"].(string)
+		if strings.Contains(cy, "UNWIND n.FeedRate") && strings.Contains(cy, `relative(v.Timestamp, "h")`) {
+			sawHour = true
+		}
+		if strings.Contains(cy, "UNWIND n.JobNumber") && strings.Contains(cy, "AS value") {
+			sawTextRaw = true
+		}
+	}
+	if !sawHour || !sawTextRaw {
+		t.Fatalf("7 days should bucket FeedRate by hour and read text JobNumber raw (hour %v, text raw %v)", sawHour, sawTextRaw)
+	}
+	for _, fr := range r.Frames {
+		if fr.Name == "CNC02-Production FeedRate" {
+			if _, i := fr.FieldByName("Max"); i < 0 {
+				t.Fatal("min/max requested but missing")
+			}
+		}
+	}
+}
+
+func TestHistoryNoMatchingProperty(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`}}
+	r := run(t, newTestDS(t, f, noAuth), `{"queryType":"history","instanceId":"CNC02-Production","properties":["Nope"]}`)
+	if r.Error == nil || !strings.Contains(r.Error.Error(), "no live value called Nope") && !strings.Contains(r.Error.Error(), "has a live value called Nope") {
+		t.Fatalf("want a clear error, got %v", r.Error)
+	}
+}
+
+func TestCypherGetsPanelTimeRange(t *testing.T) {
+	tr := backend.TimeRange{From: time.Date(2026, 11, 18, 5, 0, 0, 0, time.UTC), To: time.Date(2026, 11, 18, 6, 0, 0, 0, time.UTC)}
+	p := withTimeRange("WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to) AND x = $fromage", map[string]any{"to": "user"}, tr)
+	if p["from"] != "2026-11-18T05:00:00Z" || p["to"] != "user" {
+		t.Fatalf("params = %v", p)
+	}
+	if _, ok := withTimeRange("RETURN $fromage", nil, tr)["from"]; ok {
+		t.Fatal("$fromage is not $from")
+	}
+}
+
+func TestCypherTimestampColumnsBecomeTime(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{"UNWIND": `{"columns":["v.Timestamp","v.Value"],"data":[["2026-11-18T05:47:22.788Z",1.5],["2026-11-18T05:47:23Z",2]]}`}}
+	r := run(t, newTestDS(t, f, noAuth), `{"queryType":"cypher","cypher":"MATCH (n:T) UNWIND n.P AS v RETURN v.Timestamp, v.Value","format":"table"}`)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if r.Frames[0].Fields[0].Type() != data.FieldTypeNullableTime {
+		t.Fatalf("timestamp column type = %v", r.Frames[0].Fields[0].Type())
+	}
+}

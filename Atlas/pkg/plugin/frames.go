@@ -108,6 +108,14 @@ func (c *column) field() *data.Field {
 			}
 		}
 		return data.NewField(c.name, nil, vals)
+	case seen && allTimes(c.cells):
+		vals := make([]*time.Time, len(c.cells))
+		for i, v := range c.cells {
+			if v != nil {
+				vals[i] = parseTime(v.(string))
+			}
+		}
+		return data.NewField(c.name, nil, vals)
 	case seen && allBool:
 		vals := make([]*bool, len(c.cells))
 		for i, v := range c.cells {
@@ -221,4 +229,22 @@ func decodeRows(res *atlas.QueryResult) ([][]any, error) {
 		rows[i] = row
 	}
 	return rows, nil
+}
+
+// allTimes reports whether every non-null cell is an ISO 8601 timestamp, as
+// Atlas returns them (for example from v.Timestamp in a history query), so
+// the column becomes a time field and the result can be drawn over time.
+func allTimes(cells []any) bool {
+	n := 0
+	for _, v := range cells {
+		if v == nil {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok || len(s) < 20 || s[10] != 'T' || parseTime(s) == nil {
+			return false
+		}
+		n++
+	}
+	return n > 0
 }

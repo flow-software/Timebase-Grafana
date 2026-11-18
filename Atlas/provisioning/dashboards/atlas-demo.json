@@ -143,6 +143,124 @@
       ],
       "title": "Blend tank 1 (chamdor): lines by relationship type, names shown",
       "type": "nodeGraph"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "id": 8,
+      "targets": [
+        {
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "entityType": "CNCProduction",
+          "properties": [
+            "FeedRate"
+          ],
+          "queryType": "history",
+          "refId": "A",
+          "scope": "type"
+        }
+      ],
+      "title": "History: FeedRate, all CNC machines (auto buckets)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "includeMinMax": true,
+          "instanceId": "$machine-Production",
+          "properties": [
+            "FeedRate",
+            "SpindleTemp"
+          ],
+          "queryType": "history",
+          "refId": "A"
+        }
+      ],
+      "title": "History: $machine-Production FeedRate with min/max, SpindleTemp",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "id": 10,
+      "targets": [
+        {
+          "cypher": "MATCH (n:CNCProduction) WHERE n.entityId = \"CNC01-Production\"\nUNWIND n.SpindleTemp AS v\nWITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\nRETURN v.Timestamp AS time, v.Value AS SpindleTemp ORDER BY time",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "format": "table",
+          "queryType": "cypher",
+          "refId": "A"
+        }
+      ],
+      "title": "History via Cypher ($from/$to from the time picker)",
+      "type": "timeseries"
     }
   ],
   "schemaVersion": 39,
@@ -170,11 +288,11 @@
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "title": "Timebase Atlas demo",
   "uid": "atlas-demo",
-  "description": "First-pass demo of the Timebase Atlas data source on the CESMII workshop domains (cesmii-workshop, chamdor).",
+  "description": "Demo of the Timebase Atlas data source on the CESMII workshop domains (cesmii-workshop, chamdor).",
   "refresh": ""
 }

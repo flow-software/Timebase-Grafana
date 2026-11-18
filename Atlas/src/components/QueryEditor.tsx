@@ -5,9 +5,11 @@ import {
   Button,
   CodeEditor,
   Combobox,
+  ComboboxOption,
   InlineField,
   InlineSwitch,
   Input,
+  MultiCombobox,
   RadioButtonGroup,
   Stack,
 } from '@grafana/ui';
@@ -20,8 +22,10 @@ import {
   AtlasOptions,
   AtlasQuery,
   AtlasQueryType,
+  Aggregation,
   ColorBy,
   CypherFormat,
+  PropertyOption,
   LineColorBy,
   RelationshipColor,
   TypeOption,
@@ -35,6 +39,7 @@ type Props = QueryEditorProps<DataSource, AtlasQuery, AtlasOptions>;
 const queryTypes: Array<SelectableValue<AtlasQueryType>> = [
   { label: 'Graph', value: 'graph', description: 'Entities and relationships, for the Node Graph panel' },
   { label: 'Values', value: 'values', description: 'Current values of an instance, what it contains, or a whole type' },
+  { label: 'History', value: 'history', description: 'Stored values of live properties over the panel time range' },
   { label: 'Cypher', value: 'cypher', description: 'Write your own read-only Cypher query' },
 ];
 
@@ -204,7 +209,7 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
         />
       )}
 
-      {queryType === 'values' && (
+      {(queryType === 'values' || queryType === 'history') && (
         <>
           <Stack wrap="wrap" gap={1}>
             <InlineField label="Read" labelWidth={LABEL_WIDTH}>
@@ -239,27 +244,39 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
               <LimitField query={query} onChange={update} placeholder="1000" tooltip="Most instances to read" />
             )}
           </Stack>
-          <Stack wrap="wrap" gap={1}>
-            <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
-              <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
-            </InlineField>
-            {layout === 'columns' && (
-              <>
-                <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
-                  <InlineSwitch
-                    value={!!query.includeQuality}
-                    onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
-                  />
-                </InlineField>
-                <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
-                  <InlineSwitch
-                    value={!!query.includeTime}
-                    onChange={(e) => update({ includeTime: e.currentTarget.checked })}
-                  />
-                </InlineField>
-              </>
-            )}
-          </Stack>
+          {queryType === 'history' && (
+            <HistoryOptions
+              query={query}
+              onChange={update}
+              datasource={datasource}
+              branch={branch}
+              domain={domain}
+              scope={scope}
+            />
+          )}
+          {queryType === 'values' && (
+            <Stack wrap="wrap" gap={1}>
+              <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
+                <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
+              </InlineField>
+              {layout === 'columns' && (
+                <>
+                  <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
+                    <InlineSwitch
+                      value={!!query.includeQuality}
+                      onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
+                    />
+                  </InlineField>
+                  <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
+                    <InlineSwitch
+                      value={!!query.includeTime}
+                      onChange={(e) => update({ includeTime: e.currentTarget.checked })}
+                    />
+                  </InlineField>
+                </>
+              )}
+            </Stack>
+          )}
         </>
       )}
 
@@ -437,6 +454,94 @@ function relationshipTypesIn(series: DataFrame[] | undefined, refId: string): Se
     return undefined;
   }
   return new Set(Array.from(field.values as ArrayLike<string>));
+}
+
+const aggregations: Array<SelectableValue<Aggregation>> = [
+  { label: 'Auto', value: 'auto', description: 'Raw up to 3 hours, then minute, hour or day buckets' },
+  { label: 'Raw', value: 'raw', description: 'Every stored value (capped at 200,000 per property)' },
+  { label: 'Minute', value: 'minute', description: 'Average per minute' },
+  { label: 'Hour', value: 'hour', description: 'Average per hour' },
+  { label: 'Day', value: 'day', description: 'Average per day' },
+];
+
+function HistoryOptions({
+  query,
+  onChange,
+  datasource,
+  branch,
+  domain,
+  scope,
+}: {
+  query: AtlasQuery;
+  onChange: (p: Partial<AtlasQuery>) => void;
+  datasource: DataSource;
+  branch: string;
+  domain: string;
+  scope: string;
+}) {
+  const target = scope === 'type' ? query.entityType : query.instanceId;
+  const key = `${branch}/${domain}/${scope}/${target ?? ''}`;
+  const [props, setProps] = useState<{ key: string; list: PropertyOption[]; error?: string }>();
+  useEffect(() => {
+    if (!domain || !target) {
+      return;
+    }
+    let cancelled = false;
+    datasource
+      .getProperties(branch, domain, scope, query.instanceId, query.entityType)
+      .then((list) => !cancelled && setProps({ key, list }))
+      .catch((e) => !cancelled && setProps({ key, list: [], error: messageOf(e) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [datasource, branch, domain, scope, target, query.instanceId, query.entityType, key]);
+  const current = props?.key === key ? props : undefined;
+  const options: Array<ComboboxOption<string>> = (current?.list ?? []).map((p) => ({
+    label: p.name,
+    value: p.name,
+    description: `${p.kind}${p.count > 1 ? ` · ${p.count} instances` : ''}`,
+  }));
+  const agg = query.aggregation ?? 'auto';
+
+  return (
+    <Stack wrap="wrap" gap={1}>
+      <InlineField
+        label="Properties"
+        labelWidth={LABEL_WIDTH}
+        tooltip="Live properties (with a timestamp and quality). Each instance and property becomes one series."
+        error={current?.error}
+        invalid={!!current?.error}
+      >
+        <MultiCombobox
+          width={50}
+          options={options}
+          loading={!!target && !current}
+          placeholder={target ? 'pick properties' : 'pick an instance or type first'}
+          value={query.properties ?? []}
+          onChange={(sel) => onChange({ properties: sel.map((o) => o.value) })}
+        />
+      </InlineField>
+      <InlineField label="Aggregation" tooltip="Text and boolean properties are always read raw.">
+        <RadioButtonGroup options={aggregations} value={agg} onChange={(v) => onChange({ aggregation: v })} />
+      </InlineField>
+      {agg !== 'raw' && (
+        <InlineField label="Min/max" tooltip="Add min and max series next to the bucket average">
+          <InlineSwitch
+            value={!!query.includeMinMax}
+            onChange={(e) => onChange({ includeMinMax: e.currentTarget.checked })}
+          />
+        </InlineField>
+      )}
+      {agg !== 'minute' && agg !== 'hour' && agg !== 'day' && (
+        <InlineField label="Quality" tooltip="Add the OPC quality code of each raw value as a series">
+          <InlineSwitch
+            value={!!query.includeQuality}
+            onChange={(e) => onChange({ includeQuality: e.currentTarget.checked })}
+          />
+        </InlineField>
+      )}
+    </Stack>
+  );
 }
 
 function LimitField({

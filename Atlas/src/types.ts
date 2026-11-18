@@ -7,7 +7,10 @@ import { DataQuery } from '@grafana/schema';
  * cypher: a read-only Cypher query written by the user.
  * instances: saved by older versions; read as values with scope "type".
  */
-export type AtlasQueryType = 'graph' | 'values' | 'cypher' | 'instances';
+export type AtlasQueryType = 'graph' | 'values' | 'history' | 'cypher' | 'instances';
+
+/** History: raw points, or minute / hour / day buckets. Auto picks from the panel's time range. */
+export type Aggregation = 'auto' | 'raw' | 'minute' | 'hour' | 'day';
 
 /** Values: which instances to read. */
 export type ValuesScope = 'instance' | 'children' | 'type';
@@ -41,6 +44,11 @@ export interface AtlasQuery extends DataQuery {
   entityType?: string;
   scope?: ValuesScope;
   layout?: ValuesLayout;
+  /** History: live properties to read, e.g. FeedRate. */
+  properties?: string[];
+  aggregation?: Aggregation;
+  /** History buckets: add min and max next to the average. */
+  includeMinMax?: boolean;
   /** Graph and Cypher node graphs. */
   colorBy?: ColorBy;
   /** Draw relationships as small labelled nodes so their names are always visible. */
@@ -115,4 +123,11 @@ export interface TreeNodeData {
   label?: string;
   type: string;
   parentId?: string;
+}
+
+/** GET resources/properties: a live property with its value kind. */
+export interface PropertyOption {
+  name: string;
+  kind: 'number' | 'text' | 'boolean' | 'unknown';
+  count: number;
 }

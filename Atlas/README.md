@@ -1,12 +1,12 @@
 # Timebase Atlas data source for Grafana
 
-A backend data source plugin for Timebase Atlas: entities, current values and relationships, with a Node Graph view and read-only Cypher. It uses only the Atlas `/api/v1` REST API (worlds, instances, relationship types, queries). It does not use the i3X API or the internal SignalR value hub. The user-facing documentation, which Grafana.com shows, is [src/README.md](src/README.md).
+A backend data source plugin for Timebase Atlas: entities, current values and relationships, with a Node Graph view and read-only Cypher. It uses only the Atlas `/api/v1` REST API (worlds, instances, relationship types, queries); history comes from Cypher `UNWIND` (flow-software/Timebase#2394 was closed in favour of it). It does not use the i3X API or the internal SignalR value hub. The user-facing documentation, which Grafana.com shows, is [src/README.md](src/README.md).
 
 | Folder | What is there |
 | --- | --- |
 | `pkg/auth` | Token cache and renewal (client credentials against Pulse), retry on 401. Same code as `Historian/pkg/auth`. |
 | `pkg/atlas` | Atlas REST client: worlds, instances, relationship types, Cypher. Problem-details errors are passed through. |
-| `pkg/plugin` | `datasource.go` query types, health check, picker resources and node links; `values.go` Values query and property flattening; `graph.go` node graph frames, colours and the wide table; `tree.go` containment tree for the browse modal (cached one minute); `frames.go` shared frame helpers. Fixtures in `testdata/` are real Atlas 2.0.0 responses. |
+| `pkg/plugin` | `history.go` History query (Cypher `UNWIND` with a typed `MATCH`, `$from`/`$to` parameters, minute/hour/day buckets); `datasource.go` query types, health check, picker resources and node links; `values.go` Values query and property flattening; `graph.go` node graph frames, colours and the wide table; `tree.go` containment tree for the browse modal (cached one minute); `frames.go` shared frame helpers. Fixtures in `testdata/` are real Atlas 2.0.0 responses. |
 | `src` | Config editor, query editor, browse modal (`InstanceBrowser`, `InstanceField`, `TypeField`), Cypher helpers (`cypher.ts`), tree helpers (`tree.ts`). |
 | `provisioning` | Dev data source (uid `atlas-dev`) and the demo dashboard. |
 
@@ -52,6 +52,5 @@ docker restart flowsoftware-timebase-datasource
 
 ## Not done yet
 
-- History (waits for flow-software/Timebase#2394).
 - Live push: the plugin reads on panel refresh. Atlas's own LIVE switch uses the internal SignalR hub, which this plugin does not use.
 - Release workflow, e2e tests, Grafana.com screenshots, signing.
