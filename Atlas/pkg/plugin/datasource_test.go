@@ -537,7 +537,8 @@ func TestHistoryAutoBucketsLongRanges(t *testing.T) {
 	}}
 	ds := newTestDS(t, f, noAuth)
 	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
-	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"],"includeMinMax":true}`, to.Add(-7*24*time.Hour), to)
+	// includeMinMax unset: on by default.
+	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"]}`, to.Add(-7*24*time.Hour), to)
 	if r.Error != nil {
 		t.Fatal(r.Error)
 	}
@@ -556,10 +557,24 @@ func TestHistoryAutoBucketsLongRanges(t *testing.T) {
 	}
 	for _, fr := range r.Frames {
 		if fr.Name == "CNC02-Production FeedRate" {
-			if _, i := fr.FieldByName("Max"); i < 0 {
-				t.Fatal("min/max requested but missing")
+			hi, i := fr.FieldByName("Max")
+			if i < 0 {
+				t.Fatal("min/max on by default but missing")
+			}
+			// Max fills down to Min in the line's colour, without its own line or legend entry.
+			if hi.Config.Custom["fillBelowTo"] != "CNC02-Production FeedRate min" || hi.Config.Custom["lineWidth"] != 0 {
+				t.Fatalf("band config %v", hi.Config.Custom)
+			}
+			avg, _ := fr.FieldByName("Value")
+			if avg.Config.Color["fixedColor"] != hi.Config.Color["fixedColor"] {
+				t.Fatal("band and line colours differ")
 			}
 		}
+	}
+
+	r = runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate"],"includeMinMax":false}`, to.Add(-7*24*time.Hour), to)
+	if _, i := r.Frames[0].FieldByName("Max"); i >= 0 || r.Frames[0].Fields[1].Config.Color != nil {
+		t.Fatal("min/max switched off but still present or coloured")
 	}
 }
 

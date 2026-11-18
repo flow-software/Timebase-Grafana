@@ -136,7 +136,7 @@ export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: 
   const unit = { minute: '"m"', hour: '"h"', day: '"d"', auto: '$bucket' }[agg as string];
   const ret = unit
     ? `relative(v.Timestamp, ${unit}) AS time, avg(v.Value) AS value` +
-      (q.includeMinMax ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
+      (q.includeMinMax !== false ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
     : 'v.Timestamp AS time, v.Value AS value';
   const parts = Array.from(groups.values()).map(
     (g) =>
