@@ -16,6 +16,14 @@ type TreeNode struct {
 	Label    string `json:"label,omitempty"`
 	Type     string `json:"type"`
 	ParentID string `json:"parentId,omitempty"`
+	// Live (timestamp/value/quality) properties, for picking History series.
+	Live []LiveProperty `json:"live,omitempty"`
+}
+
+// LiveProperty is a property with stored history and the kind of its value.
+type LiveProperty struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 // instanceTree builds the containment tree for one world in four reads:
@@ -38,6 +46,7 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 	}
 
 	labels := map[string]string{}
+	live := map[string][]LiveProperty{}
 	res, err := d.client.Query(ctx, branch, domain, "MATCH (n) RETURN n", nil)
 	if err != nil {
 		return nil, err
@@ -49,8 +58,12 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 	for _, row := range rows {
 		if len(row) > 0 && isNode(row[0]) {
 			m := row[0].(map[string]any)
+			id := str(m["entityId"])
 			if l := str(m["entityLabel"]); l != "" {
-				labels[str(m["entityId"])] = l
+				labels[id] = l
+			}
+			for _, p := range liveProperties([]map[string]any{m}) {
+				live[id] = append(live[id], LiveProperty{Name: p.Name, Kind: p.Kind})
 			}
 		}
 	}
@@ -93,7 +106,7 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 
 	out := make([]TreeNode, len(items))
 	for i, it := range items {
-		out[i] = TreeNode{ID: it.ElementID, Label: labels[it.ElementID], Type: shortName(it.TypeURI), ParentID: parent[it.ElementID]}
+		out[i] = TreeNode{ID: it.ElementID, Label: labels[it.ElementID], Type: shortName(it.TypeURI), ParentID: parent[it.ElementID], Live: live[it.ElementID]}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return strings.ToLower(nodeName(out[i])) < strings.ToLower(nodeName(out[j])) })
 	return out, nil

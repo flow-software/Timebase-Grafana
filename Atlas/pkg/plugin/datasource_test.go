@@ -532,6 +532,56 @@ func TestHistoryAutoBucketsLongRanges(t *testing.T) {
 	}
 }
 
+func TestHistorySelectionMixesWholeInstancesAndProperties(t *testing.T) {
+	other := `{"entityId":"CNC03-Production","typeId":"urn:x:CNCProduction","FeedRate":{"Timestamp":"2026-11-18T05:00:00Z","Value":3,"Quality":192},"SpindleTemp":{"Timestamp":"2026-11-18T05:00:00Z","Value":40,"Quality":192}}`
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `],[` + other + `]]}`,
+		"AS value":         `{"columns":["id","t","value","quality"],"data":[]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 6, 0, 0, 0, time.UTC)
+	q := `{"queryType":"history","selection":[{"instance":"CNC02-Production"},{"instance":"CNC03-Production","property":"SpindleTemp"},{"instance":"CNC03-Production","property":"Nope"},{"instance":"Gone"}]}`
+	r := runRange(t, ds, q, to.Add(-time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	// CNC02 whole: FeedRate and JobNumber; CNC03: SpindleTemp only.
+	reads := map[string][]any{}
+	for _, q := range f.queries {
+		cy := q["cypher"].(string)
+		if i := strings.Index(cy, "UNWIND n."); i >= 0 {
+			prop := strings.Fields(cy[i+len("UNWIND n."):])[0]
+			reads[prop] = q["parameters"].(map[string]any)["ids"].([]any)
+		}
+	}
+	if len(reads) != 3 || len(reads["FeedRate"]) != 1 || reads["FeedRate"][0] != "CNC02-Production" || reads["SpindleTemp"][0] != "CNC03-Production" || reads["JobNumber"] == nil {
+		t.Fatalf("reads = %v", reads)
+	}
+	var notices []string
+	for _, n := range r.Frames[0].Meta.Notices {
+		notices = append(notices, n.Text)
+	}
+	joined := strings.Join(notices, " | ")
+	if !strings.Contains(joined, "Not found in main/") || !strings.Contains(joined, "Gone") || !strings.Contains(joined, "CNC03-Production Nope") {
+		t.Fatalf("notices = %s", joined)
+	}
+}
+
+func TestTreeCarriesLiveProperties(t *testing.T) {
+	nodes := liveProperties([]map[string]any{mustNode(prodNode)})
+	if len(nodes) != 2 || nodes[0].Name != "FeedRate" || nodes[0].Kind != "number" || nodes[1].Kind != "text" {
+		t.Fatalf("live = %+v", nodes)
+	}
+}
+
+func mustNode(s string) map[string]any {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		panic(err)
+	}
+	return m
+}
+
 func TestHistoryNoMatchingProperty(t *testing.T) {
 	f := &fakeAtlas{cypher: map[string]string{"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`}}
 	r := run(t, newTestDS(t, f, noAuth), `{"queryType":"history","instanceId":"CNC02-Production","properties":["Nope"]}`)

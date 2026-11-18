@@ -1,4 +1,4 @@
-import { TreeNodeData } from './types';
+import { LiveProperty, TreeNodeData } from './types';
 
 export interface TreeItem {
   node: TreeNodeData;
@@ -66,4 +66,54 @@ export function filterTree(roots: TreeItem[], text: string): { roots: TreeItem[]
     return self || children.length > 0 ? { node: n, children } : undefined;
   };
   return { roots: roots.map(walk).filter((c): c is TreeItem => !!c), matches };
+}
+
+/** A tree row for picking History series: an instance with the live properties to show under it. */
+export interface PickItem {
+  node: TreeNodeData;
+  props: LiveProperty[];
+  children: PickItem[];
+}
+
+/**
+ * The tree for the History picker. With onlyLive, branches without any live
+ * property are left out. A filter keeps instances whose label, id or type
+ * matches (with all their properties) and properties whose name matches
+ * (with their instance), plus ancestors so everything shows in place.
+ */
+export function pickTree(roots: TreeItem[], text: string, onlyLive: boolean): { roots: PickItem[]; matches: number } {
+  const q = text.trim().toLowerCase();
+  let matches = 0;
+  const walk = (item: TreeItem): PickItem | undefined => {
+    const children = item.children.map(walk).filter((c): c is PickItem => !!c);
+    const n = item.node;
+    const live = n.live ?? [];
+    let props = live;
+    let keepSelf = !onlyLive || live.length > 0;
+    if (q) {
+      const self = [n.label ?? '', n.id, n.type].some((s) => s.toLowerCase().includes(q));
+      if (!self) {
+        props = live.filter((p) => p.name.toLowerCase().includes(q));
+      }
+      keepSelf = (self && keepSelf) || props.length > 0;
+      if (keepSelf) {
+        matches++;
+      }
+    }
+    return keepSelf || children.length > 0 ? { node: n, props, children } : undefined;
+  };
+  return { roots: roots.map(walk).filter((c): c is PickItem => !!c), matches };
+}
+
+/** Ids of the item and everything under it that has live properties. */
+export function liveDescendants(item: PickItem): string[] {
+  const out: string[] = [];
+  const walk = (i: PickItem) => {
+    if ((i.node.live?.length ?? 0) > 0) {
+      out.push(i.node.id);
+    }
+    i.children.forEach(walk);
+  };
+  walk(item);
+  return out;
 }

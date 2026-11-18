@@ -172,16 +172,38 @@
             "type": "flowsoftware-atlas-datasource",
             "uid": "atlas-dev"
           },
-          "entityType": "CNCProduction",
-          "properties": [
-            "FeedRate"
-          ],
           "queryType": "history",
           "refId": "A",
-          "scope": "type"
+          "selection": [
+            {
+              "instance": "CNC01-Production",
+              "property": "FeedRate",
+              "type": "CNCProduction"
+            },
+            {
+              "instance": "CNC02-Production",
+              "property": "FeedRate",
+              "type": "CNCProduction"
+            },
+            {
+              "instance": "CNC03-Production",
+              "property": "FeedRate",
+              "type": "CNCProduction"
+            },
+            {
+              "instance": "CNC04-Production",
+              "property": "FeedRate",
+              "type": "CNCProduction"
+            },
+            {
+              "instance": "CNC05-Production",
+              "property": "FeedRate",
+              "type": "CNCProduction"
+            }
+          ]
         }
       ],
-      "title": "History: FeedRate, all CNC machines (auto buckets)",
+      "title": "History: FeedRate, CNC01 to CNC05 (auto buckets)",
       "type": "timeseries"
     },
     {
@@ -213,13 +235,18 @@
             "uid": "atlas-dev"
           },
           "includeMinMax": true,
-          "instanceId": "$machine-Production",
-          "properties": [
-            "FeedRate",
-            "SpindleTemp"
-          ],
           "queryType": "history",
-          "refId": "A"
+          "refId": "A",
+          "selection": [
+            {
+              "instance": "$machine-Production",
+              "property": "FeedRate"
+            },
+            {
+              "instance": "$machine-Production",
+              "property": "SpindleTemp"
+            }
+          ]
         }
       ],
       "title": "History: $machine-Production FeedRate with min/max, SpindleTemp",

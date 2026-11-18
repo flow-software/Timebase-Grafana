@@ -65,6 +65,33 @@ describe('toCypher history', () => {
     expect(c).toContain('datetime($from)');
   });
 
+  it('writes the raw read for one picked property', () => {
+    const c = toCypher({
+      refId: 'A',
+      queryType: 'history',
+      selection: [{ instance: 'CNC01-Production', property: 'SpindleTemp', type: 'CNCProduction' }],
+    });
+    expect(c).toContain('MATCH (n:CNCProduction) WHERE n.entityId = "CNC01-Production"');
+    expect(c).toContain('RETURN v.Timestamp AS time, v.Value AS SpindleTemp');
+  });
+
+  it('has no single query for whole instances, several picks or an unknown type', () => {
+    expect(toCypher({ refId: 'A', queryType: 'history', selection: [{ instance: 'x', type: 'T' }] })).toBeUndefined();
+    expect(
+      toCypher({
+        refId: 'A',
+        queryType: 'history',
+        selection: [
+          { instance: 'x', property: 'A', type: 'T' },
+          { instance: 'y', property: 'A', type: 'T' },
+        ],
+      })
+    ).toBeUndefined();
+    expect(
+      toCypher({ refId: 'A', queryType: 'history', selection: [{ instance: '$m', property: 'A' }] })
+    ).toBeUndefined();
+  });
+
   it('has no single query for instances or several properties', () => {
     expect(
       toCypher({ refId: 'A', queryType: 'history', scope: 'instance', instanceId: 'x', properties: ['A'] })

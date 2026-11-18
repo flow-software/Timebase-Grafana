@@ -5,16 +5,15 @@ import {
   Button,
   CodeEditor,
   Combobox,
-  ComboboxOption,
   InlineField,
   InlineSwitch,
   Input,
-  MultiCombobox,
   RadioButtonGroup,
   Stack,
 } from '@grafana/ui';
 
 import { DataSource } from '../datasource';
+import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
 import { TypeField } from './TypeField';
 import { toCypher } from '../cypher';
@@ -25,7 +24,6 @@ import {
   Aggregation,
   ColorBy,
   CypherFormat,
-  PropertyOption,
   LineColorBy,
   RelationshipColor,
   TypeOption,
@@ -72,10 +70,7 @@ const LABEL_WIDTH = 14;
 
 export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, data }: Props) {
   // Older "instances" queries are shown, and saved on the next change, as values of a type.
-  const query: AtlasQuery =
-    saved.queryType === 'instances'
-      ? { ...saved, queryType: 'values', scope: 'type', layout: saved.layout ?? 'columns' }
-      : saved;
+  const query: AtlasQuery = upgrade(saved);
   const queryType = query.queryType ?? 'graph';
   const scope = query.scope ?? 'instance';
   const layout = query.layout ?? (scope === 'type' ? 'columns' : 'rows');
@@ -123,21 +118,15 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
     }
   };
 
-  const branchOptions = useMemo(
-    () => unique(worlds.map((w) => w.branch)).map((b) => ({ label: b, value: b })),
-    [worlds]
-  );
-  const domainOptions = useMemo(
-    () =>
-      worlds
-        .filter((w) => w.branch === branch)
-        .map((w) => ({
-          label: w.domain,
-          value: w.domain,
-          description: w.instanceCount !== undefined ? `${w.instanceCount} instances` : undefined,
-        })),
-    [worlds, branch]
-  );
+  // A handful of worlds: no need to memoise.
+  const branchOptions = unique(worlds.map((w) => w.branch)).map((b) => ({ label: b, value: b }));
+  const domainOptions = worlds
+    .filter((w) => w.branch === branch)
+    .map((w) => ({
+      label: w.domain,
+      value: w.domain,
+      description: w.instanceCount !== undefined ? `${w.instanceCount} instances` : undefined,
+    }));
   const asCypher = queryType === 'cypher' ? undefined : toCypher(query);
 
   return (
@@ -209,7 +198,35 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
         />
       )}
 
-      {(queryType === 'values' || queryType === 'history') && (
+      {queryType === 'history' && (
+        <>
+          <Stack wrap="wrap" gap={1}>
+            <InlineField
+              label="Series"
+              labelWidth={LABEL_WIDTH}
+              tooltip="Instances (every live value) or single properties. Each instance and property becomes one series."
+            >
+              <HistoryField
+                datasource={datasource}
+                branch={branch}
+                domain={domain}
+                value={query.selection ?? []}
+                onChange={(selection) => update({ selection, properties: undefined })}
+              />
+            </InlineField>
+          </Stack>
+          {!query.selection?.length && (query.properties?.length ?? 0) > 0 && (
+            <Alert severity="info" title="Saved with the older History options">
+              This query reads {(query.properties ?? []).join(', ')} of{' '}
+              {query.scope === 'type' ? `every ${query.entityType}` : `${query.instanceId} and what is nested under it`}
+              . It still runs; selecting series replaces it.
+            </Alert>
+          )}
+          <HistoryOptions query={query} onChange={update} />
+        </>
+      )}
+
+      {queryType === 'values' && (
         <>
           <Stack wrap="wrap" gap={1}>
             <InlineField label="Read" labelWidth={LABEL_WIDTH}>
@@ -244,39 +261,27 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
               <LimitField query={query} onChange={update} placeholder="1000" tooltip="Most instances to read" />
             )}
           </Stack>
-          {queryType === 'history' && (
-            <HistoryOptions
-              query={query}
-              onChange={update}
-              datasource={datasource}
-              branch={branch}
-              domain={domain}
-              scope={scope}
-            />
-          )}
-          {queryType === 'values' && (
-            <Stack wrap="wrap" gap={1}>
-              <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
-                <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
-              </InlineField>
-              {layout === 'columns' && (
-                <>
-                  <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
-                    <InlineSwitch
-                      value={!!query.includeQuality}
-                      onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
-                    />
-                  </InlineField>
-                  <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
-                    <InlineSwitch
-                      value={!!query.includeTime}
-                      onChange={(e) => update({ includeTime: e.currentTarget.checked })}
-                    />
-                  </InlineField>
-                </>
-              )}
-            </Stack>
-          )}
+          <Stack wrap="wrap" gap={1}>
+            <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
+              <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
+            </InlineField>
+            {layout === 'columns' && (
+              <>
+                <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
+                  <InlineSwitch
+                    value={!!query.includeQuality}
+                    onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
+                  />
+                </InlineField>
+                <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
+                  <InlineSwitch
+                    value={!!query.includeTime}
+                    onChange={(e) => update({ includeTime: e.currentTarget.checked })}
+                  />
+                </InlineField>
+              </>
+            )}
+          </Stack>
         </>
       )}
 
@@ -464,64 +469,15 @@ const aggregations: Array<SelectableValue<Aggregation>> = [
   { label: 'Day', value: 'day', description: 'Average per day' },
 ];
 
-function HistoryOptions({
-  query,
-  onChange,
-  datasource,
-  branch,
-  domain,
-  scope,
-}: {
-  query: AtlasQuery;
-  onChange: (p: Partial<AtlasQuery>) => void;
-  datasource: DataSource;
-  branch: string;
-  domain: string;
-  scope: string;
-}) {
-  const target = scope === 'type' ? query.entityType : query.instanceId;
-  const key = `${branch}/${domain}/${scope}/${target ?? ''}`;
-  const [props, setProps] = useState<{ key: string; list: PropertyOption[]; error?: string }>();
-  useEffect(() => {
-    if (!domain || !target) {
-      return;
-    }
-    let cancelled = false;
-    datasource
-      .getProperties(branch, domain, scope, query.instanceId, query.entityType)
-      .then((list) => !cancelled && setProps({ key, list }))
-      .catch((e) => !cancelled && setProps({ key, list: [], error: messageOf(e) }));
-    return () => {
-      cancelled = true;
-    };
-  }, [datasource, branch, domain, scope, target, query.instanceId, query.entityType, key]);
-  const current = props?.key === key ? props : undefined;
-  const options: Array<ComboboxOption<string>> = (current?.list ?? []).map((p) => ({
-    label: p.name,
-    value: p.name,
-    description: `${p.kind}${p.count > 1 ? ` · ${p.count} instances` : ''}`,
-  }));
+function HistoryOptions({ query, onChange }: { query: AtlasQuery; onChange: (p: Partial<AtlasQuery>) => void }) {
   const agg = query.aggregation ?? 'auto';
-
   return (
     <Stack wrap="wrap" gap={1}>
       <InlineField
-        label="Properties"
+        label="Aggregation"
         labelWidth={LABEL_WIDTH}
-        tooltip="Live properties (with a timestamp and quality). Each instance and property becomes one series."
-        error={current?.error}
-        invalid={!!current?.error}
+        tooltip="Text and boolean properties are always read raw."
       >
-        <MultiCombobox
-          width={50}
-          options={options}
-          loading={!!target && !current}
-          placeholder={target ? 'pick properties' : 'pick an instance or type first'}
-          value={query.properties ?? []}
-          onChange={(sel) => onChange({ properties: sel.map((o) => o.value) })}
-        />
-      </InlineField>
-      <InlineField label="Aggregation" tooltip="Text and boolean properties are always read raw.">
         <RadioButtonGroup options={aggregations} value={agg} onChange={(v) => onChange({ aggregation: v })} />
       </InlineField>
       {agg !== 'raw' && (
@@ -542,6 +498,29 @@ function HistoryOptions({
       )}
     </Stack>
   );
+}
+
+/**
+ * Queries saved by older versions, shown (and saved on the next change) in
+ * the current shape: "instances" becomes values of a type, and History of
+ * one instance's properties becomes a selection. History of nested instances
+ * or a type cannot be listed without reading Atlas, so it is left as it is.
+ */
+export function upgrade(q: AtlasQuery): AtlasQuery {
+  if (q.queryType === 'instances') {
+    return { ...q, queryType: 'values', scope: 'type', layout: q.layout ?? 'columns' };
+  }
+  if (
+    q.queryType === 'history' &&
+    !q.selection?.length &&
+    q.properties?.length &&
+    (q.scope ?? 'instance') === 'instance' &&
+    q.instanceId
+  ) {
+    const instance = q.instanceId;
+    return { ...q, selection: q.properties.map((property) => ({ instance, property })), properties: undefined };
+  }
+  return q;
 }
 
 function LimitField({

@@ -1,4 +1,4 @@
-import { ancestorsOf, buildTree, filterTree } from './tree';
+import { ancestorsOf, buildTree, filterTree, liveDescendants, pickTree } from './tree';
 import { TreeNodeData } from './types';
 
 const nodes: TreeNodeData[] = [
@@ -35,5 +35,48 @@ describe('filterTree', () => {
 
   it('matches type names', () => {
     expect(filterTree(buildTree(nodes), 'sqltag').matches).toBe(1);
+  });
+});
+
+describe('pickTree', () => {
+  const live: TreeNodeData[] = [
+    { id: 'CNC01', type: 'CNCMachine' },
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      parentId: 'CNC01',
+      live: [
+        { name: 'FeedRate', kind: 'number' },
+        { name: 'JobNumber', kind: 'text' },
+      ],
+    },
+    { id: 'CNC01-Info', type: 'Info', parentId: 'CNC01' },
+    { id: 'Site', type: 'Site' },
+  ];
+
+  it('drops branches without live values', () => {
+    const { roots } = pickTree(buildTree(live), '', true);
+    expect(roots.map((r) => r.node.id)).toEqual(['CNC01']);
+    expect(roots[0].children.map((c) => c.node.id)).toEqual(['CNC01-Production']);
+  });
+
+  it('keeps everything without onlyLive', () => {
+    expect(pickTree(buildTree(live), '', false).roots.map((r) => r.node.id)).toEqual(['CNC01', 'Site']);
+  });
+
+  it('filters by property name and shows only matching properties', () => {
+    const { roots, matches } = pickTree(buildTree(live), 'feed', true);
+    expect(matches).toBe(1);
+    expect(roots[0].children[0].props.map((p) => p.name)).toEqual(['FeedRate']);
+  });
+
+  it('an instance match shows all its properties', () => {
+    const { roots } = pickTree(buildTree(live), 'production', true);
+    expect(roots[0].children[0].props).toHaveLength(2);
+  });
+
+  it('lists nested instances with live values', () => {
+    const { roots } = pickTree(buildTree(live), '', false);
+    expect(liveDescendants(roots[0])).toEqual(['CNC01-Production']);
   });
 });

@@ -134,6 +134,10 @@ type queryModel struct {
 	Scope  string `json:"scope"`
 	Layout string `json:"layout"`
 
+	// History: the series picked in the browse modal. Older queries use
+	// Scope/InstanceID/EntityType with Properties instead.
+	Selection []historyPick `json:"selection"`
+
 	// History: live properties to read, and raw points or buckets.
 	Properties    []string `json:"properties"`
 	Aggregation   string   `json:"aggregation"`
@@ -606,24 +610,6 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 			return fail(err)
 		}
 		return reply(http.StatusOK, relationshipColors(types))
-
-	case "properties":
-		// Live properties of an instance, nested instances or a type, for History.
-		if domain == "" {
-			return reply(http.StatusOK, []PropertyOption{})
-		}
-		qm := queryModel{Scope: params["scope"], InstanceID: params["instance"], EntityType: params["type"], Limit: 50}
-		if qm.Scope == "" {
-			qm.Scope = scopeInstance
-		}
-		if (qm.Scope == scopeType && qm.EntityType == "") || (qm.Scope != scopeType && qm.InstanceID == "") {
-			return reply(http.StatusOK, []PropertyOption{})
-		}
-		nodes, err := d.scopeNodes(ctx, branch, domain, qm)
-		if err != nil {
-			return fail(err)
-		}
-		return reply(http.StatusOK, liveProperties(nodes))
 
 	case "tree":
 		if domain == "" {

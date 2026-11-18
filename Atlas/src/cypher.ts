@@ -66,6 +66,21 @@ export function toCypher(q: AtlasQuery): string | undefined {
       return `MATCH (n:${q.entityType})\nRETURN n\nLIMIT ${limit}`;
     }
     case 'history': {
+      const sel = q.selection ?? [];
+      if (sel.length === 1) {
+        const { instance, property, type } = sel[0];
+        if (!property || !type || !IDENT.test(type) || !IDENT.test(property)) {
+          return undefined;
+        }
+        return (
+          `MATCH (n:${type}) WHERE n.entityId = ${cypherString(instance)}\nUNWIND n.${property} AS v\n` +
+          `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\n` +
+          `RETURN v.Timestamp AS time, v.Value AS ${property}\nORDER BY time`
+        );
+      }
+      if (sel.length > 1) {
+        return undefined;
+      }
       const prop = q.properties?.length === 1 ? q.properties[0] : undefined;
       if (q.scope !== 'type' || !prop || !q.entityType || !IDENT.test(q.entityType) || !IDENT.test(prop)) {
         return undefined;
