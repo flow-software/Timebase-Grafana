@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -529,7 +530,7 @@ func TestHistoryRawUsesTypedMatchAndParameters(t *testing.T) {
 	}
 }
 
-func TestHistoryAutoBucketsLongRanges(t *testing.T) {
+func TestHistoryHourAveragesWithMinMax(t *testing.T) {
 	f := &fakeAtlas{cypher: map[string]string{
 		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
 		"relative(":        `{"columns":["id","t","avg","min","max","n"],"data":[["CNC02-Production","2026-11-17T00:00:00Z",10,5,15,3600]]}`,
@@ -537,8 +538,7 @@ func TestHistoryAutoBucketsLongRanges(t *testing.T) {
 	}}
 	ds := newTestDS(t, f, noAuth)
 	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
-	// includeMinMax unset: on by default.
-	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"]}`, to.Add(-7*24*time.Hour), to)
+	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"],"aggregation":"hour","includeMinMax":true}`, to.Add(-7*24*time.Hour), to)
 	if r.Error != nil {
 		t.Fatal(r.Error)
 	}
@@ -553,28 +553,95 @@ func TestHistoryAutoBucketsLongRanges(t *testing.T) {
 		}
 	}
 	if !sawHour || !sawTextRaw {
-		t.Fatalf("7 days should bucket FeedRate by hour and read text JobNumber raw (hour %v, text raw %v)", sawHour, sawTextRaw)
+		t.Fatalf("Hour should bucket FeedRate by hour and read text JobNumber raw (hour %v, text raw %v)", sawHour, sawTextRaw)
 	}
 	for _, fr := range r.Frames {
 		if fr.Name == "CNC02-Production FeedRate" {
-			hi, i := fr.FieldByName("Max")
-			if i < 0 {
-				t.Fatal("min/max on by default but missing")
-			}
-			// Max fills down to Min in the line's colour, without its own line or legend entry.
-			if hi.Config.Custom["fillBelowTo"] != "CNC02-Production FeedRate min" || hi.Config.Custom["lineWidth"] != 0 {
-				t.Fatalf("band config %v", hi.Config.Custom)
-			}
-			avg, _ := fr.FieldByName("Value")
-			if avg.Config.Color["fixedColor"] != hi.Config.Color["fixedColor"] {
-				t.Fatal("band and line colours differ")
+			if _, i := fr.FieldByName("Max"); i < 0 {
+				t.Fatal("min/max requested but missing")
 			}
 		}
 	}
+}
 
-	r = runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate"],"includeMinMax":false}`, to.Add(-7*24*time.Hour), to)
-	if _, i := r.Frames[0].FieldByName("Max"); i >= 0 || r.Frames[0].Fields[1].Config.Color != nil {
-		t.Fatal("min/max switched off but still present or coloured")
+func TestHistoryAutoKeepsPeaksInOneLine(t *testing.T) {
+	// Minute buckets: steady around 10, one minute that stopped (min 0) and
+	// one that spiked (max 99).
+	var rows []string
+	start := time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 3000; i++ {
+		lo, hi := 9, 11
+		switch i {
+		case 1000:
+			lo = 0
+		case 2000:
+			hi = 99
+		}
+		rows = append(rows, fmt.Sprintf(`["CNC02-Production","%s",10,%d,%d,60]`, start.Add(time.Duration(i)*time.Minute).Format(time.RFC3339), lo, hi))
+	}
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
+		"relative(":        `{"columns":["id","t","avg","min","max","n"],"data":[` + strings.Join(rows, ",") + `]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	r := runRange(t, ds, `{"queryType":"history","selection":[{"instance":"CNC02-Production","property":"FeedRate"}]}`, to.Add(-7*24*time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	// 7 days of one instance: minute buckets fit the row budget.
+	if cy := f.queries[len(f.queries)-1]["cypher"].(string); !strings.Contains(cy, `relative(v.Timestamp, "m")`) {
+		t.Fatalf("auto source: %s", cy)
+	}
+	if len(r.Frames) != 1 || len(r.Frames[0].Fields) != 2 {
+		t.Fatalf("want one series with one value field, got %v", r.Frames)
+	}
+	v := r.Frames[0].Fields[1]
+	if v.Len() > 1000 {
+		t.Fatalf("%d points, want at most 1000", v.Len())
+	}
+	lo, hi := 1e9, -1e9
+	for i := 0; i < v.Len(); i++ {
+		x := v.At(i).(float64)
+		lo, hi = min(lo, x), max(hi, x)
+	}
+	if lo != 0 || hi != 99 {
+		t.Fatalf("peaks lost: min %v max %v", lo, hi)
+	}
+}
+
+func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
+	t0 := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	var ss []sample
+	for i := 0; i < 3000; i++ {
+		v := 100 + float64(i%2)*10 // noise between 100 and 110
+		if i == 1500 {
+			v = 0 // a stop
+		}
+		ts := t0.Add(time.Duration(i) * time.Second)
+		ss = append(ss, sample{t: ts, avg: v, lo: v, hi: v, loT: ts, hiT: ts, n: 1})
+	}
+	few := peakLine(append([]sample(nil), ss[:10]...), t0, t0.Add(3000*time.Second), 20, true)
+	if len(few) != 10 {
+		t.Fatalf("raw values that fit must pass through, got %d", len(few))
+	}
+	got := peakLine(ss, t0, t0.Add(3000*time.Second), 300, true)
+	if len(got) > 300 {
+		t.Fatalf("%d points", len(got))
+	}
+	sawStop := false
+	for i, p := range got {
+		if i > 0 && p.t.Before(got[i-1].t) {
+			t.Fatal("points must stay in time order")
+		}
+		if p.v == 0 {
+			sawStop = true
+		} else if p.v == 100 || p.v == 110 {
+			t.Fatalf("noise should be averaged, got %v", p.v)
+		}
+	}
+	if !sawStop {
+		t.Fatal("the stop must stay at its true value")
 	}
 }
 

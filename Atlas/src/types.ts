@@ -54,7 +54,6 @@ export interface AtlasQuery extends DataQuery {
   properties?: string[];
   aggregation?: Aggregation;
   /** History buckets: add min and max next to the average. */
-  /** Bucket min and max, drawn as a band around the average. Unset means on. */
   includeMinMax?: boolean;
   /** Graph and Cypher node graphs. */
   colorBy?: ColorBy;

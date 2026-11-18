@@ -30,7 +30,10 @@ import (
 
 // Aggregation choices.
 const (
-	aggAuto   = "auto"
+	aggAuto = "auto"
+	// aggPeak is what Auto does for number properties: one line that keeps
+	// each slice's lowest and highest value at their own times.
+	aggPeak   = "peak"
 	aggRaw    = "raw"
 	aggMinute = "minute"
 	aggHour   = "hour"
@@ -47,7 +50,8 @@ const historyConcurrency = 4
 var bucketUnit = map[string]string{aggMinute: "m", aggHour: "h", aggDay: "d"}
 
 // autoAggregation picks raw points or a bucket size from the panel's range,
-// so a long range does not pull millions of points.
+// so a long range does not pull millions of points. Auto history of number
+// properties uses peakSource instead; this stays for $bucket in Cypher.
 func autoAggregation(from, to time.Time) string {
 	r := to.Sub(from)
 	switch {
@@ -113,7 +117,7 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 
 	agg := qm.Aggregation
 	if agg == "" || agg == aggAuto {
-		agg = autoAggregation(from, to)
+		agg = aggPeak
 	}
 
 	type result struct {
@@ -155,7 +159,6 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 		}
 	}
 	sort.SliceStable(frames, func(i, j int) bool { return frames[i].Name < frames[j].Name })
-	styleBands(frames)
 	if len(frames) == 0 {
 		frames = data.Frames{data.NewFrame("history")}
 		addNotice(frames[0], data.NoticeSeverityInfo, "No values in this time range.")
@@ -382,6 +385,9 @@ func historyCypher(t historyTarget, agg string) (string, map[string]any) {
 
 // readHistory runs one target and returns a frame per instance.
 func (d *Datasource) readHistory(ctx context.Context, branch, domain string, t historyTarget, agg string, from, to time.Time, qm queryModel, labels map[string]string) (data.Frames, string, error) {
+	if agg == aggPeak {
+		return d.readPeaks(ctx, branch, domain, t, from, to, qm, labels)
+	}
 	cypher, params := historyCypher(t, agg)
 	params["from"] = from.UTC().Format(time.RFC3339Nano)
 	params["to"] = to.UTC().Format(time.RFC3339Nano)
@@ -452,7 +458,7 @@ func historyFrame(id, label, prop string, rows [][]any, agg string, qm queryMode
 			data.NewField("Time", nil, times),
 			data.NewField("Value", lbl, avg).SetConfig(&data.FieldConfig{DisplayNameFromDS: name}),
 		)
-		if qm.minMax() {
+		if qm.IncludeMinMax {
 			f.Fields = append(f.Fields,
 				data.NewField("Min", lbl, mins).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " min"}),
 				data.NewField("Max", lbl, maxs).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " max"}),
@@ -606,4 +612,243 @@ func liveProperties(nodes []map[string]any) []PropertyOption {
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	return out
+}
+
+// Auto history of numbers: one line per series that does not hide events.
+//
+// A plain bucket average flattens a short stop or spike, and a strict
+// min/max line turns noisy signals into a solid block. Auto does neither:
+// the panel range is cut into slices, each slice draws its average, and a
+// slice's lowest or highest value is added at its own time when it lies
+// further from that average than the series' typical spread (the median
+// min-to-max range of its slices). Noise stays smoothed; stops and spikes
+// keep their true values.
+//
+// Atlas supplies every value up to 3 hours, then each minute's (for long
+// ranges each hour's or day's) avg, min, max and count. When the raw values
+// already fit the panel they are returned unchanged.
+
+// peakRowBudget bounds the rows one Auto read asks Atlas for (instances x
+// buckets). 7 days of minutes for 5 instances (~50k rows) read in 3.5 s live.
+const peakRowBudget = 60000
+
+const (
+	defaultMaxPoints = 1000
+	maxMaxPoints     = 5000
+)
+
+// peakSource picks raw values or the finest bucket unit for an Auto read of
+// n instances.
+func peakSource(from, to time.Time, n int) string {
+	r := to.Sub(from)
+	if r <= 3*time.Hour {
+		return aggRaw
+	}
+	if n < 1 {
+		n = 1
+	}
+	for _, s := range []struct {
+		agg  string
+		size time.Duration
+	}{{aggMinute, time.Minute}, {aggHour, time.Hour}} {
+		if int64(r/s.size)*int64(n) <= peakRowBudget {
+			return s.agg
+		}
+	}
+	return aggDay
+}
+
+var unitSize = map[string]time.Duration{aggMinute: time.Minute, aggHour: time.Hour, aggDay: 24 * time.Hour}
+
+// sample is one raw value (lo = hi = avg, n = 1) or one Atlas bucket.
+type sample struct {
+	t           time.Time // raw time, or bucket start
+	avg, lo, hi float64
+	loT, hiT    time.Time
+	n           float64
+	q           *int64 // raw only
+}
+
+// point is one value of the line.
+type point struct {
+	t time.Time
+	v float64
+	q *int64
+}
+
+func (d *Datasource) readPeaks(ctx context.Context, branch, domain string, t historyTarget, from, to time.Time, qm queryModel, labels map[string]string) (data.Frames, string, error) {
+	n := len(t.IDs)
+	if n == 0 {
+		n = len(labels)
+	}
+	src := peakSource(from, to, n)
+	cypher, params := historyCypher(t, src)
+	params["from"] = from.UTC().Format(time.RFC3339Nano)
+	params["to"] = to.UTC().Format(time.RFC3339Nano)
+	res, err := d.client.Query(ctx, branch, domain, cypher, params)
+	if err != nil {
+		return nil, "", err
+	}
+	rows, err := decodeRows(res)
+	if err != nil {
+		return nil, "", err
+	}
+	notice := ""
+	if src == aggRaw && len(rows) > maxHistoryRows {
+		rows = rows[:maxHistoryRows]
+		notice = fmt.Sprintf("%s: only the first %d values are used.", t.Prop, maxHistoryRows)
+	}
+
+	byID := map[string][]sample{}
+	var ids []string
+	for _, r := range rows {
+		ts := parseTime(str(cell(r, 1)))
+		if ts == nil {
+			continue
+		}
+		id := str(cell(r, 0))
+		if _, ok := byID[id]; !ok {
+			ids = append(ids, id)
+		}
+		if src == aggRaw {
+			v := num(cell(r, 2))
+			if v == nil {
+				continue
+			}
+			var q *int64
+			if f, ok := cell(r, 3).(float64); ok {
+				qi := int64(f)
+				q = &qi
+			}
+			byID[id] = append(byID[id], sample{t: *ts, avg: *v, lo: *v, hi: *v, loT: *ts, hiT: *ts, n: 1, q: q})
+			continue
+		}
+		avg, lo, hi := num(cell(r, 2)), num(cell(r, 3)), num(cell(r, 4))
+		if avg == nil || lo == nil || hi == nil {
+			continue
+		}
+		cnt := 1.0
+		if c := num(cell(r, 5)); c != nil && *c > 0 {
+			cnt = *c
+		}
+		// Atlas does not say when in the bucket the min and max fell.
+		mid := ts.Add(unitSize[src] / 2)
+		byID[id] = append(byID[id], sample{t: *ts, avg: *avg, lo: *lo, hi: *hi, loT: mid, hiT: mid, n: cnt})
+	}
+
+	maxPoints := qm.maxPoints
+	if maxPoints <= 0 {
+		maxPoints = defaultMaxPoints
+	}
+	if maxPoints > maxMaxPoints {
+		maxPoints = maxMaxPoints
+	}
+	var frames data.Frames
+	for _, id := range ids {
+		pts := peakLine(byID[id], from, to, maxPoints, src == aggRaw)
+		frames = append(frames, peakFrame(id, labels[id], t.Prop, pts, qm.IncludeQuality && src == aggRaw))
+	}
+	return frames, notice, nil
+}
+
+// peakLine turns time-ordered samples into at most maxPoints line points:
+// raw samples that fit are returned as they are; otherwise the range is
+// cut into maxPoints/3 slices, each giving its average plus any extreme
+// beyond the series' typical spread.
+func peakLine(ss []sample, from, to time.Time, maxPoints int, raw bool) []point {
+	sort.SliceStable(ss, func(i, j int) bool { return ss[i].t.Before(ss[j].t) })
+	if raw && len(ss) <= maxPoints {
+		out := make([]point, len(ss))
+		for i, s := range ss {
+			out[i] = point{t: s.t, v: s.avg, q: s.q}
+		}
+		return out
+	}
+	if len(ss) == 0 {
+		return nil
+	}
+	slices := maxPoints / 3
+	if slices < 1 {
+		slices = 1
+	}
+	span := to.Sub(from)
+	if span <= 0 {
+		from = ss[0].t
+		span = ss[len(ss)-1].t.Sub(from) + 1
+	}
+
+	// Merge the samples of each slice.
+	type slice struct {
+		first, last time.Time
+		sum, n      float64
+		lo, hi      sample // the samples holding the slice's min and max
+	}
+	var merged []slice
+	cur := -1
+	for _, s := range ss {
+		k := int(int64(s.t.Sub(from)) * int64(slices) / int64(span))
+		k = max(0, min(k, slices-1))
+		if k != cur || len(merged) == 0 {
+			merged = append(merged, slice{first: s.t, last: s.t, sum: s.avg * s.n, n: s.n, lo: s, hi: s})
+			cur = k
+			continue
+		}
+		m := &merged[len(merged)-1]
+		m.last = s.t
+		m.sum += s.avg * s.n
+		m.n += s.n
+		if s.lo < m.lo.lo {
+			m.lo = s
+		}
+		if s.hi > m.hi.hi {
+			m.hi = s
+		}
+	}
+
+	// The series' typical spread: the median min-to-max range of its slices.
+	spreads := make([]float64, len(merged))
+	for i, m := range merged {
+		spreads[i] = m.hi.hi - m.lo.lo
+	}
+	sort.Float64s(spreads)
+	typical := spreads[len(spreads)/2]
+
+	out := make([]point, 0, len(merged)*3)
+	for _, m := range merged {
+		avg := m.sum / m.n
+		at := m.first.Add(m.last.Sub(m.first) / 2)
+		pts := []point{{t: at, v: avg}}
+		if avg-m.lo.lo > typical {
+			pts = append(pts, point{t: m.lo.loT, v: m.lo.lo, q: m.lo.q})
+		}
+		if m.hi.hi-avg > typical {
+			pts = append(pts, point{t: m.hi.hiT, v: m.hi.hi, q: m.hi.q})
+		}
+		sort.SliceStable(pts, func(i, j int) bool { return pts[i].t.Before(pts[j].t) })
+		out = append(out, pts...)
+	}
+	return out
+}
+
+// peakFrame is one Auto series, named and labelled like historyFrame's.
+func peakFrame(id, label, prop string, pts []point, withQuality bool) *data.Frame {
+	if label == "" {
+		label = id
+	}
+	name := label + " " + prop
+	lbl := data.Labels{"instance": id, "property": prop}
+	times := make([]time.Time, len(pts))
+	values := make([]float64, len(pts))
+	quality := make([]*int64, len(pts))
+	for i, p := range pts {
+		times[i], values[i], quality[i] = p.t, p.v, p.q
+	}
+	f := data.NewFrame(name,
+		data.NewField("Time", nil, times),
+		data.NewField("Value", lbl, values).SetConfig(&data.FieldConfig{DisplayNameFromDS: name}),
+	)
+	if withQuality {
+		f.Fields = append(f.Fields, data.NewField("Quality", lbl, quality).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " quality"}))
+	}
+	return f
 }

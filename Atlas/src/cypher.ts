@@ -136,7 +136,7 @@ export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: 
   const unit = { minute: '"m"', hour: '"h"', day: '"d"', auto: '$bucket' }[agg as string];
   const ret = unit
     ? `relative(v.Timestamp, ${unit}) AS time, avg(v.Value) AS value` +
-      (q.includeMinMax !== false ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
+      (q.includeMinMax ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
     : 'v.Timestamp AS time, v.Value AS value';
   const parts = Array.from(groups.values()).map(
     (g) =>
@@ -147,6 +147,9 @@ export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: 
   );
   const head = [
     `// History: one read per entity type and property (Atlas reads stored values only for a typed MATCH).`,
+    ...(unit === '$bucket'
+      ? ['// Cypher returns bucket averages; the History builder Auto line also keeps stops and spikes.']
+      : []),
     unit === '$bucket'
       ? '// $from, $to and $bucket follow the time picker; use "m", "h" or "d" instead of $bucket for fixed buckets.'
       : '// $from and $to follow the time picker.',
