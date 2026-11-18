@@ -79,7 +79,9 @@ WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)
 RETURN v.Timestamp AS time, v.Value AS SpindleTemp ORDER BY time
 ```
 
-Name the type in the `MATCH` (`(n:CNCProduction)`): with a bare `(n)` Atlas unwinds only the current value. Group into buckets with `relative(v.Timestamp, "h")` and `avg()`, `min()` or `max()`; only a bare unit (`"m"`, `"h"`, `"d"`) makes buckets. Timestamp columns become time fields, so the result can go in a time series panel.
+Name the type in the `MATCH` (`(n:CNCProduction)`): with a bare `(n)` Atlas unwinds only the current value. `$bucket` is filled the same way, with the unit the History builder would pick for the range (`"m"`, `"h"` or `"d"`), for `relative(v.Timestamp, $bucket)`.
+
+**Edit as Cypher** on a History query writes the whole selection: one typed read per entity type and property, joined with `UNION ALL`, returning `entity, property, time, value`. The **Time series** format splits such rows into one series per entity and property. Text, boolean and record values are left out (listed in a comment), since they do not plot. Group into buckets with `relative(v.Timestamp, "h")` and `avg()`, `min()` or `max()`; only a bare unit (`"m"`, `"h"`, `"d"`) makes buckets. Timestamp columns become time fields, so the result can go in a time series panel.
 
 ## Dashboard variables from Atlas
 

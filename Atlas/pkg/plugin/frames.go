@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -261,4 +262,102 @@ func allTimes(cells []any) bool {
 		n++
 	}
 	return n > 0
+}
+
+// splitSeries turns a long Cypher result into time series: the first time
+// column is the time, text columns are labels, and the other columns are
+// values. Rows are grouped by their labels (first-seen order) and sorted by
+// time; rows without a time are dropped. A series is named by its label
+// values, so "entity, property, time, value" rows give series named
+// "CNC01-Production FeedRate" like the History builder's.
+func splitSeries(f *data.Frame) (data.Frames, error) {
+	timeIdx := -1
+	var labelIdx, valueIdx []int
+	for i, fl := range f.Fields {
+		switch {
+		case timeIdx < 0 && (fl.Type() == data.FieldTypeNullableTime || fl.Type() == data.FieldTypeTime):
+			timeIdx = i
+		case fl.Type() == data.FieldTypeNullableString || fl.Type() == data.FieldTypeString:
+			labelIdx = append(labelIdx, i)
+		default:
+			valueIdx = append(valueIdx, i)
+		}
+	}
+	if timeIdx < 0 {
+		return nil, badRequest("time series output needs a timestamp column, e.g. RETURN v.Timestamp AS time")
+	}
+	if len(valueIdx) == 0 {
+		return nil, badRequest("time series output needs a number column, e.g. v.Value AS value")
+	}
+
+	type group struct {
+		labels data.Labels
+		name   string
+		rows   []int
+	}
+	groups := map[string]*group{}
+	var order []string
+	for r := 0; r < f.Rows(); r++ {
+		if t, ok := f.Fields[timeIdx].ConcreteAt(r); !ok || t == nil {
+			continue
+		}
+		var parts []string
+		labels := data.Labels{}
+		for _, li := range labelIdx {
+			v, _ := f.Fields[li].ConcreteAt(r)
+			s, _ := v.(string)
+			labels[f.Fields[li].Name] = s
+			parts = append(parts, s)
+		}
+		key := strings.Join(parts, "\x00")
+		g, ok := groups[key]
+		if !ok {
+			g = &group{labels: labels, name: strings.TrimSpace(strings.Join(parts, " "))}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.rows = append(g.rows, r)
+	}
+
+	out := make(data.Frames, 0, len(order))
+	for _, key := range order {
+		g := groups[key]
+		rows := g.rows
+		at := func(r int) time.Time {
+			v, _ := f.Fields[timeIdx].ConcreteAt(r)
+			return v.(time.Time)
+		}
+		sort.SliceStable(rows, func(i, j int) bool { return at(rows[i]).Before(at(rows[j])) })
+		times := make([]time.Time, len(rows))
+		for i, r := range rows {
+			times[i] = at(r)
+		}
+		name := g.name
+		if name == "" {
+			name = "series"
+		}
+		fr := data.NewFrame(name, data.NewField("Time", nil, times))
+		for _, vi := range valueIdx {
+			src := f.Fields[vi]
+			dst := data.NewFieldFromFieldType(src.Type(), len(rows))
+			dst.Name = src.Name
+			dst.Labels = g.labels.Copy()
+			for i, r := range rows {
+				dst.Set(i, src.At(r))
+			}
+			display := name
+			if len(valueIdx) > 1 && src.Name != "value" {
+				display = name + " " + src.Name
+			}
+			dst.SetConfig(&data.FieldConfig{DisplayNameFromDS: display})
+			fr.Fields = append(fr.Fields, dst)
+		}
+		out = append(out, fr)
+	}
+	if len(out) == 0 {
+		fr := data.NewFrame("result")
+		addNotice(fr, data.NoticeSeverityInfo, "No values in this time range.")
+		out = data.Frames{fr}
+	}
+	return out, nil
 }

@@ -113,6 +113,9 @@ const (
 	formatAuto  = "auto"
 	formatTable = "table"
 	formatGraph = "graph"
+	// formatSeries splits a long result (a time column, text columns, value
+	// columns) into one time series per combination of the text columns.
+	formatSeries = "timeseries"
 )
 
 type queryModel struct {
@@ -441,6 +444,11 @@ func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm 
 		}
 	} else {
 		frames = data.Frames{cypherTable("result", res.Columns, rows)}
+		if format == formatSeries {
+			if frames, err = splitSeries(frames[0]); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if truncated {
 		addNotice(frames[0], data.NoticeSeverityWarning, fmt.Sprintf("Only the first %d rows are shown. Add a LIMIT to the query.", maxCypherRows))
@@ -663,6 +671,15 @@ func withTimeRange(cypher string, params map[string]any, tr backend.TimeRange) m
 		if usesParam(cypher, name) {
 			out[name] = t.UTC().Format(time.RFC3339Nano)
 		}
+	}
+	// $bucket: the relative() unit the History builder would use for this
+	// range, so a Cypher history query also buckets by the time picker.
+	if _, set := out["bucket"]; !set && usesParam(cypher, "bucket") && !tr.From.IsZero() {
+		agg := autoAggregation(tr.From, tr.To)
+		if agg == aggRaw {
+			agg = aggMinute
+		}
+		out["bucket"] = bucketUnit[agg]
 	}
 	return out
 }
