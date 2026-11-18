@@ -579,6 +579,8 @@ func TestHistoryAutoKeepsPeaksInOneLine(t *testing.T) {
 		}
 		rows = append(rows, fmt.Sprintf(`["CNC02-Production","%s",10,%d,%d,60]`, start.Add(time.Duration(i)*time.Minute).Format(time.RFC3339), lo, hi))
 	}
+	// Buckets without a min or max (null values) must not repeat the series.
+	rows = append([]string{fmt.Sprintf(`["CNC02-Production","%s",null,null,null,0]`, start.Add(-time.Minute).Format(time.RFC3339))}, rows...)
 	f := &fakeAtlas{cypher: map[string]string{
 		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
 		"relative(":        `{"columns":["id","t","avg","min","max","n"],"data":[` + strings.Join(rows, ",") + `]}`,
@@ -642,6 +644,60 @@ func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
 	}
 	if !sawStop {
 		t.Fatal("the stop must stay at its true value")
+	}
+}
+
+func TestHistoryEmptyCurrentTextFallsBackToRaw(t *testing.T) {
+	// JobNumber's current value is empty, so it looks like a number; Atlas
+	// cannot bucket its text values (no "relative(" answer here = error).
+	node := `{"entityId":"CNC02-Production","typeId":"urn:x:CNCProduction","JobNumber":{"Timestamp":"2026-11-18T05:00:00Z","Value":null,"Quality":64}}`
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + node + `]]}`,
+		"AS value":         `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","2026-11-17T00:00:00Z","JOB-1",192]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	r := runRange(t, ds, `{"queryType":"history","selection":[{"instance":"CNC02-Production","property":"JobNumber"}]}`, to.Add(-6*time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	v := r.Frames[0].Fields[1]
+	if got, _ := v.ConcreteAt(0); v.Len() != 1 || got != "JOB-1" {
+		t.Fatalf("want the raw text value, got %v", r.Frames[0].Fields)
+	}
+}
+
+func TestValuesSelectionFiltersProperties(t *testing.T) {
+	other := `{"entityId":"CNC03-Production","typeId":"urn:x:CNCProduction","FeedRate":{"Timestamp":"2026-11-18T05:00:00Z","Value":3,"Quality":192},"SpindleTemp":{"Timestamp":"2026-11-18T05:00:00Z","Value":40,"Quality":192}}`
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `],[` + other + `]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 6, 0, 0, 0, time.UTC)
+	q := `{"queryType":"values","selection":[{"instance":"CNC03-Production","property":"SpindleTemp"},{"instance":"CNC02-Production"},{"instance":"Gone"}]}`
+	r := runRange(t, ds, q, to.Add(-time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	fr := r.Frames[0]
+	inst, _ := fr.FieldByName("Instance id")
+	prop, _ := fr.FieldByName("Property")
+	if inst == nil || prop == nil {
+		t.Fatalf("fields %v", fr.Fields)
+	}
+	if inst.At(0) != "CNC03-Production" || prop.At(0) != "SpindleTemp" {
+		t.Fatalf("first row %v %v: picks keep their order", inst.At(0), prop.At(0))
+	}
+	for i := 0; i < fr.Rows(); i++ {
+		if inst.At(i) == "CNC03-Production" && prop.At(i) != "SpindleTemp" {
+			t.Fatalf("CNC03 should only show SpindleTemp, got %v", prop.At(i))
+		}
+	}
+	if fr.Rows() < 2 {
+		t.Fatal("CNC02 picked whole: all its properties")
+	}
+	if fr.Meta == nil || len(fr.Meta.Notices) == 0 || !strings.Contains(fr.Meta.Notices[0].Text, "Gone") {
+		t.Fatal("missing instance should be reported")
 	}
 }
 

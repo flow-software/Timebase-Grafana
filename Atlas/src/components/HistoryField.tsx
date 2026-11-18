@@ -110,7 +110,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
       )}
       <HistoryBrowser
         isOpen={open}
-        title={`History series in ${domain}${branch ? ` @ ${branch}` : ''}`}
+        title={`Instances and properties in ${domain}${branch ? ` @ ${branch}` : ''}`}
         nodes={current?.nodes}
         loading={!!current?.loading}
         error={current?.error}

@@ -82,7 +82,7 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
       case 'instances':
         return !!query.entityType;
       case 'values':
-        return query.scope === 'type' ? !!query.entityType : !!query.instanceId;
+        return (query.selection?.length ?? 0) > 0 || (query.scope === 'type' ? !!query.entityType : !!query.instanceId);
       case 'history':
         return (
           (query.selection?.length ?? 0) > 0 ||

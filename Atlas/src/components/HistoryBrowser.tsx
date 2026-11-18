@@ -238,7 +238,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
           onChange={(e) => setFilter(e.currentTarget.value)}
         />
         <InlineSwitch
-          label="Only with history"
+          label="Only with live values"
           showLabel
           value={onlyLive}
           onChange={(e) => setOnlyLive(e.currentTarget.checked)}

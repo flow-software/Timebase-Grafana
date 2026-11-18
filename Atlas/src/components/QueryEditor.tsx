@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { css } from '@emotion/css';
 import { DataFrame, QueryEditorProps, SelectableValue } from '@grafana/data';
 import {
@@ -16,7 +16,6 @@ import {
 import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
-import { TypeField } from './TypeField';
 import { historyCypher, toCypher } from '../cypher';
 import {
   AtlasOptions,
@@ -27,19 +26,24 @@ import {
   CypherFormat,
   LineColorBy,
   RelationshipColor,
-  TypeOption,
   ValuesLayout,
-  ValuesScope,
   World,
 } from '../types';
 
 type Props = QueryEditorProps<DataSource, AtlasQuery, AtlasOptions>;
 
-const queryTypes: Array<SelectableValue<AtlasQueryType>> = [
+/** Editor tabs. Data covers two query types: values (Current) and history (Trend). */
+type Tab = 'graph' | 'data' | 'cypher';
+
+const tabs: Array<SelectableValue<Tab>> = [
   { label: 'Graph', value: 'graph', description: 'Entities and relationships, for the Node Graph panel' },
-  { label: 'Values', value: 'values', description: 'Current values of an instance, what it contains, or a whole type' },
-  { label: 'History', value: 'history', description: 'Stored values of live properties over the panel time range' },
+  { label: 'Data', value: 'data', description: 'Current values or trends of the instances and properties you pick' },
   { label: 'Cypher', value: 'cypher', description: 'Write your own read-only Cypher query' },
+];
+
+const dataModes: Array<SelectableValue<AtlasQueryType>> = [
+  { label: 'Current', value: 'values', description: 'The latest value of each property, for tables, stats and gauges' },
+  { label: 'Trend', value: 'history', description: 'Stored values over the panel time range, for time series' },
 ];
 
 const formats: Array<SelectableValue<CypherFormat>> = [
@@ -51,12 +55,6 @@ const formats: Array<SelectableValue<CypherFormat>> = [
     value: 'timeseries',
     description: 'One series per combination of the text columns (e.g. entity, property), with the time column',
   },
-];
-
-const scopes: Array<SelectableValue<ValuesScope>> = [
-  { label: 'Instances', value: 'instance', description: 'One instance' },
-  { label: 'Nested Instances', value: 'children', description: 'An instance and everything nested under it' },
-  { label: 'Types', value: 'type', description: 'Every instance of one entity type' },
 ];
 
 const layouts: Array<SelectableValue<ValuesLayout>> = [
@@ -78,18 +76,16 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
   // Older "instances" queries are shown, and saved on the next change, as values of a type.
   const query: AtlasQuery = upgrade(saved);
   const queryType = query.queryType ?? 'graph';
+  const tab: Tab =
+    queryType === 'values' || queryType === 'history' ? 'data' : queryType === 'cypher' ? 'cypher' : 'graph';
+  const hasSelection = (query.selection?.length ?? 0) > 0;
   const scope = query.scope ?? 'instance';
   const layout = query.layout ?? (scope === 'type' ? 'columns' : 'rows');
   const branch = query.branch || datasource.defaultBranch;
   const domain = query.domain || datasource.defaultDomain;
 
   const [worlds, setWorlds] = useState<World[]>([]);
-  // Entity types for one branch/domain; a stale list is ignored by key.
-  const [pickers, setPickers] = useState<{ key: string; types: TypeOption[] }>();
   const [loadError, setLoadError] = useState<string>();
-  const worldKey = domain ? `${branch}/${domain}` : '';
-  const current = pickers && pickers.key === worldKey ? pickers : undefined;
-  const types = useMemo(() => current?.types ?? [], [current]);
 
   useEffect(() => {
     datasource
@@ -97,25 +93,6 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       .then(setWorlds)
       .catch((e) => setLoadError(messageOf(e)));
   }, [datasource]);
-
-  useEffect(() => {
-    if (!worldKey) {
-      return;
-    }
-    let cancelled = false;
-    datasource
-      .getTypes(branch, domain)
-      .then((t) => {
-        if (!cancelled) {
-          setPickers({ key: worldKey, types: t });
-          setLoadError(undefined);
-        }
-      })
-      .catch((e) => !cancelled && setLoadError(messageOf(e)));
-    return () => {
-      cancelled = true;
-    };
-  }, [datasource, branch, domain, worldKey]);
 
   const update = (patch: Partial<AtlasQuery>, run = true) => {
     onChange({ ...query, ...patch });
@@ -135,7 +112,7 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
     }));
   const asCypher = queryType === 'cypher' ? undefined : toCypher(query);
   // History selections need the browse tree for types and properties, so they are converted on click.
-  const historySelection = queryType === 'history' && (query.selection?.length ?? 0) > 0;
+  const historySelection = queryType === 'history' && hasSelection;
   const [cypherError, setCypherError] = useState<string>();
   const editAsCypher = () => {
     if (!historySelection) {
@@ -163,8 +140,17 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
     <Stack direction="column" gap={1}>
       <Stack wrap="wrap" gap={1}>
         <InlineField label="Query type" labelWidth={LABEL_WIDTH}>
-          <RadioButtonGroup options={queryTypes} value={queryType} onChange={(v) => update({ queryType: v })} />
+          <RadioButtonGroup
+            options={tabs}
+            value={tab}
+            onChange={(v) => v !== tab && update({ queryType: v === 'data' ? 'history' : v })}
+          />
         </InlineField>
+        {tab === 'data' && (
+          <InlineField label="Show" tooltip="The same selection, as its latest values or as a trend over time">
+            <RadioButtonGroup options={dataModes} value={queryType} onChange={(v) => update({ queryType: v })} />
+          </InlineField>
+        )}
       </Stack>
 
       <Stack wrap="wrap" gap={1}>
@@ -229,15 +215,15 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
         />
       )}
 
-      {queryType === 'history' && (
+      {tab === 'data' && (
         <>
           <Stack wrap="wrap" gap={1}>
             <InlineField
               grow
               className={css({ minWidth: 0, flex: '1 1 0', '& > *:last-child': { minWidth: 0, flex: '1 1 0' } })}
-              label="Series"
+              label="Selection"
               labelWidth={LABEL_WIDTH}
-              tooltip="Instances (every live value) or single properties. Each instance and property becomes one series."
+              tooltip="Instances (every property) or single properties, picked in the tree. Current shows their latest values; Trend draws one series per instance and property."
             >
               <HistoryField
                 datasource={datasource}
@@ -248,73 +234,36 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
               />
             </InlineField>
           </Stack>
-          {!query.selection?.length && (query.properties?.length ?? 0) > 0 && (
-            <Alert severity="info" title="Saved with the older History options">
-              This query reads {(query.properties ?? []).join(', ')} of{' '}
-              {query.scope === 'type' ? `every ${query.entityType}` : `${query.instanceId} and what is nested under it`}
-              . It still runs; selecting series replaces it.
+          {!hasSelection && legacyNote(query) && (
+            <Alert severity="info" title="Saved with the older options">
+              {legacyNote(query)} It still runs; selecting instances or properties replaces it.
             </Alert>
           )}
-          <HistoryOptions query={query} onChange={update} />
-        </>
-      )}
-
-      {queryType === 'values' && (
-        <>
-          <Stack wrap="wrap" gap={1}>
-            <InlineField label="Read" labelWidth={LABEL_WIDTH}>
-              <RadioButtonGroup options={scopes} value={scope} onChange={(v) => update({ scope: v })} />
-            </InlineField>
-          </Stack>
-          <Stack wrap="wrap" gap={1}>
-            {scope === 'type' ? (
-              <InlineField label="Entity type" labelWidth={LABEL_WIDTH}>
-                <TypeField
-                  datasource={datasource}
-                  branch={branch}
-                  domain={domain}
-                  types={types}
-                  value={query.entityType}
-                  onChange={(t) => update({ entityType: t })}
-                />
+          {queryType === 'history' ? (
+            <HistoryOptions query={query} onChange={update} />
+          ) : (
+            <Stack wrap="wrap" gap={1}>
+              <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
+                <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
               </InlineField>
-            ) : (
-              <InlineField label="Instance" labelWidth={LABEL_WIDTH}>
-                <InstanceField
-                  datasource={datasource}
-                  branch={branch}
-                  domain={domain}
-                  value={query.instanceId}
-                  placeholder="instance id or $variable"
-                  onChange={(id) => update({ instanceId: id })}
-                />
-              </InlineField>
-            )}
-            {scope !== 'instance' && (
-              <LimitField query={query} onChange={update} placeholder="1000" tooltip="Most instances to read" />
-            )}
-          </Stack>
-          <Stack wrap="wrap" gap={1}>
-            <InlineField label="Layout" labelWidth={LABEL_WIDTH}>
-              <RadioButtonGroup options={layouts} value={layout} onChange={(v) => update({ layout: v })} />
-            </InlineField>
-            {layout === 'columns' && (
-              <>
-                <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
-                  <InlineSwitch
-                    value={!!query.includeQuality}
-                    onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
-                  />
-                </InlineField>
-                <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
-                  <InlineSwitch
-                    value={!!query.includeTime}
-                    onChange={(e) => update({ includeTime: e.currentTarget.checked })}
-                  />
-                </InlineField>
-              </>
-            )}
-          </Stack>
+              {layout === 'columns' && (
+                <>
+                  <InlineField label="Quality" tooltip="Add a quality code column next to each live value">
+                    <InlineSwitch
+                      value={!!query.includeQuality}
+                      onChange={(e) => update({ includeQuality: e.currentTarget.checked })}
+                    />
+                  </InlineField>
+                  <InlineField label="Timestamps" tooltip="Add a time column next to each live value">
+                    <InlineSwitch
+                      value={!!query.includeTime}
+                      onChange={(e) => update({ includeTime: e.currentTarget.checked })}
+                    />
+                  </InlineField>
+                </>
+              )}
+            </Stack>
+          )}
         </>
       )}
 
@@ -540,13 +489,17 @@ function HistoryOptions({ query, onChange }: { query: AtlasQuery; onChange: (p: 
 
 /**
  * Queries saved by older versions, shown (and saved on the next change) in
- * the current shape: "instances" becomes values of a type, and History of
- * one instance's properties becomes a selection. History of nested instances
- * or a type cannot be listed without reading Atlas, so it is left as it is.
+ * the current shape: "instances" becomes values of a type, Values of one
+ * instance and History of one instance's properties become a selection.
+ * Nested instances or a whole type cannot be listed without reading Atlas,
+ * so those are left as they are (and still run).
  */
 export function upgrade(q: AtlasQuery): AtlasQuery {
   if (q.queryType === 'instances') {
     return { ...q, queryType: 'values', scope: 'type', layout: q.layout ?? 'columns' };
+  }
+  if (q.queryType === 'values' && !q.selection?.length && (q.scope ?? 'instance') === 'instance' && q.instanceId) {
+    return { ...q, selection: [{ instance: q.instanceId }], layout: q.layout ?? 'rows' };
   }
   if (
     q.queryType === 'history' &&
@@ -596,11 +549,27 @@ function noCypherReason(queryType: string): string {
   switch (queryType) {
     case 'graph':
       return 'Atlas returns internal ids for multi-hop paths, so depth 2 to 4 has no single Cypher query; use depth 1';
-    case 'history':
-      return 'Select series first';
     default:
-      return 'Pick an instance or a type first';
+      return 'Select instances or properties first ($variables cannot be written into Cypher)';
   }
+}
+
+/** What a Data query saved before the shared selection reads, or undefined. */
+function legacyNote(q: AtlasQuery): string | undefined {
+  const scope = q.scope ?? 'instance';
+  const what =
+    scope === 'type'
+      ? `every ${q.entityType}`
+      : scope === 'children'
+        ? `${q.instanceId} and what is nested under it`
+        : '';
+  if (q.queryType === 'history' && (q.properties?.length ?? 0) > 0 && what) {
+    return `This query reads ${(q.properties ?? []).join(', ')} of ${what}.`;
+  }
+  if (q.queryType === 'values' && what && (scope === 'type' ? q.entityType : q.instanceId)) {
+    return `This query reads the current values of ${what}.`;
+  }
+  return undefined;
 }
 
 function unique(list: string[]): string[] {
