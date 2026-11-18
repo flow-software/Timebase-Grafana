@@ -137,6 +137,46 @@ func (c *Client) RelationshipTypes(ctx context.Context, branch, domain string) (
 	return out, nil
 }
 
+// EntityType is one entity type of the domain's ontology, as GET
+// /api/v1/branches/{b}/domains/{d}/entity-types returns it (only the parts
+// the plugin reads).
+type EntityType struct {
+	URI        string              `json:"uri"`
+	ParentType string              `json:"parentType"`
+	Properties []EntityProperty    `json:"properties"`
+	Pins       []EntityPropertyPin `json:"propertyPins"`
+}
+
+// EntityProperty is a property attached to a type. A live (TVQ) property has
+// a compound range whose Value field type is set in fieldTypeOverrides; a
+// record has its own compound type as range.
+type EntityProperty struct {
+	URI           string         `json:"uri"`
+	Range         string         `json:"range"`
+	CompoundRange *CompoundRange `json:"compoundRange"`
+}
+
+type CompoundRange struct {
+	BaseCompoundURI    string            `json:"baseCompoundUri"`
+	FieldTypeOverrides map[string]string `json:"fieldTypeOverrides"`
+}
+
+// EntityPropertyPin fixes an open field type (e.g. TVQ Value) of a property
+// on a type; propertyPins are effective, so inherited pins are included.
+type EntityPropertyPin struct {
+	PropertyURI        string            `json:"propertyUri"`
+	FieldTypeOverrides map[string]string `json:"fieldTypeOverrides"`
+}
+
+// EntityTypes lists the entity types of a domain, with their properties.
+func (c *Client) EntityTypes(ctx context.Context, branch, domain string) ([]EntityType, error) {
+	var out []EntityType
+	if err := c.do(ctx, http.MethodGet, worldPath(branch, domain)+"/entity-types", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Query runs a read-only Cypher query. Atlas rejects CREATE, MERGE, DELETE
 // and SET in its parser.
 func (c *Client) Query(ctx context.Context, branch, domain, cypher string, params map[string]any) (*QueryResult, error) {

@@ -91,6 +91,7 @@ type Datasource struct {
 	httpClient *http.Client
 	configErr  error
 	trees      treeCache
+	kindCache  kindCache
 }
 
 func (d *Datasource) Dispose() {

@@ -184,7 +184,7 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 		if scopeErr != nil {
 			return nil, scopeErr
 		}
-		targets, labels = historyTargets(nodes, func(map[string]any) []string { return props }, qm.Scope == scopeType)
+		targets, labels = historyTargets(nodes, func(map[string]any) []string { return props }, qm.Scope == scopeType, d.kinds(ctx, branch, domain, false).kind)
 		if len(targets) == 0 {
 			return nil, badRequest(fmt.Sprintf("none of the selected instances has a live value called %s", strings.Join(props, " or ")))
 		}
@@ -376,7 +376,7 @@ func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string
 		}
 		return out
 	}
-	targets, labels := historyTargets(ordered, propsOf, false)
+	targets, labels := historyTargets(ordered, propsOf, false, d.kinds(ctx, branch, domain, false).kind)
 
 	var parts []string
 	if len(missing) > 0 {
@@ -397,7 +397,8 @@ func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string
 
 // historyTargets groups instances by type for each property they hold as a
 // live value. labels maps entityId to a display name.
-func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []string, wholeType bool) ([]historyTarget, map[string]string) {
+// declared gives a property's kind from the ontology ("" when open or unknown).
+func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []string, wholeType bool, declared func(typeURI, prop string) string) ([]historyTarget, map[string]string) {
 	labels := map[string]string{}
 	byKey := map[string]*historyTarget{}
 	var order []string
@@ -425,6 +426,10 @@ func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []strin
 			}
 			if isRecord(v) {
 				t.Record = true
+				continue
+			}
+			if k := declared(str(n["typeId"]), p); k != "" {
+				t.Numeric = k == "number"
 				continue
 			}
 			switch v.(map[string]any)["Value"].(type) {

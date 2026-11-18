@@ -47,6 +47,7 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 
 	labels := map[string]string{}
 	live := map[string][]LiveProperty{}
+	declared := d.kinds(ctx, branch, domain, false)
 	res, err := d.client.Query(ctx, branch, domain, "MATCH (n) RETURN n", nil)
 	if err != nil {
 		return nil, err
@@ -63,7 +64,12 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 				labels[id] = l
 			}
 			for _, p := range liveProperties([]map[string]any{m}) {
-				live[id] = append(live[id], LiveProperty{Name: p.Name, Kind: p.Kind})
+				kind := p.Kind
+				// The ontology knows the type even when the current value is empty.
+				if k := declared.kind(str(m["typeId"]), p.Name); k != "" {
+					kind = k
+				}
+				live[id] = append(live[id], LiveProperty{Name: p.Name, Kind: kind})
 			}
 		}
 	}
