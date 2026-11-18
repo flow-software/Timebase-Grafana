@@ -1,4 +1,4 @@
-import { AtlasQuery } from './types';
+import { AtlasQuery, TreeNodeData } from './types';
 
 /**
  * Names used as $parameters in a Cypher query, in order of first use.
@@ -66,19 +66,8 @@ export function toCypher(q: AtlasQuery): string | undefined {
       return `MATCH (n:${q.entityType})\nRETURN n\nLIMIT ${limit}`;
     }
     case 'history': {
-      const sel = q.selection ?? [];
-      if (sel.length === 1) {
-        const { instance, property, type } = sel[0];
-        if (!property || !type || !IDENT.test(type) || !IDENT.test(property)) {
-          return undefined;
-        }
-        return (
-          `MATCH (n:${type}) WHERE n.entityId = ${cypherString(instance)}\nUNWIND n.${property} AS v\n` +
-          `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\n` +
-          `RETURN v.Timestamp AS time, v.Value AS ${property}\nORDER BY time`
-        );
-      }
-      if (sel.length > 1) {
+      // A selection needs each instance's type and properties: see historyCypher.
+      if (q.selection?.length) {
         return undefined;
       }
       const prop = q.properties?.length === 1 ? q.properties[0] : undefined;
@@ -97,3 +86,73 @@ export function toCypher(q: AtlasQuery): string | undefined {
 }
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Value kinds that plot as numbers. Text, boolean and record values are left out of the Cypher. */
+const PLOTTABLE = new Set(['number', 'unknown']);
+
+/**
+ * The Cypher for a History selection, using the browse tree for each
+ * instance's type and live properties. Atlas only reads stored values when
+ * the MATCH names the type, so there is one read per type and property,
+ * joined with UNION ALL into long rows (entity, property, time, value) for
+ * the "Time series" output format. Auto aggregation uses $bucket, which the
+ * plugin fills from the time range like the builder does.
+ */
+export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: string; error?: string } {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const groups = new Map<string, { type: string; prop: string; ids: string[] }>();
+  const missing: string[] = [];
+  const left: string[] = [];
+  for (const pick of q.selection ?? []) {
+    const n = byId.get(pick.instance);
+    if (!n) {
+      missing.push(pick.instance);
+      continue;
+    }
+    const live = n.live ?? [];
+    const props = pick.property ? [pick.property] : live.map((p) => p.name);
+    for (const prop of props) {
+      const kind = live.find((p) => p.name === prop)?.kind ?? 'unknown';
+      if (!PLOTTABLE.has(kind) || !IDENT.test(n.type) || !IDENT.test(prop)) {
+        left.push(`${n.id} ${prop} (${kind})`);
+        continue;
+      }
+      const key = n.type + '\u0000' + prop;
+      const g = groups.get(key) ?? { type: n.type, prop, ids: [] };
+      if (!g.ids.includes(n.id)) {
+        g.ids.push(n.id);
+      }
+      groups.set(key, g);
+    }
+  }
+  if (missing.length) {
+    return { error: `Not in this domain's tree (variables cannot be turned into Cypher): ${missing.join(', ')}` };
+  }
+  if (groups.size === 0) {
+    return { error: 'The selection has no number values to plot.' };
+  }
+
+  const agg = q.aggregation ?? 'auto';
+  const unit = { minute: '"m"', hour: '"h"', day: '"d"', auto: '$bucket' }[agg as string];
+  const ret = unit
+    ? `relative(v.Timestamp, ${unit}) AS time, avg(v.Value) AS value` +
+      (q.includeMinMax ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
+    : 'v.Timestamp AS time, v.Value AS value';
+  const parts = Array.from(groups.values()).map(
+    (g) =>
+      `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]\n` +
+      `UNWIND n.${g.prop} AS v\n` +
+      `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\n` +
+      `RETURN n.entityId AS entity, ${cypherString(g.prop)} AS property, ${ret}`
+  );
+  const head = [
+    `// History: one read per entity type and property (Atlas reads stored values only for a typed MATCH).`,
+    unit === '$bucket'
+      ? '// $from, $to and $bucket follow the time picker; use "m", "h" or "d" instead of $bucket for fixed buckets.'
+      : '// $from and $to follow the time picker.',
+  ];
+  if (left.length) {
+    head.push(`// Left out, not numbers: ${left.join(', ')}`);
+  }
+  return { cypher: head.join('\n') + '\n' + parts.join('\nUNION ALL\n') };
+}

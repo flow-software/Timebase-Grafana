@@ -315,6 +315,37 @@ func TestCypherAutoFormat(t *testing.T) {
 	}
 }
 
+func TestCypherTimeSeriesFormatSplitsLongRows(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{"UNION ALL": `{"columns":["entity","property","time","value"],"data":[` +
+		`["A","FeedRate","2026-11-18T05:00:02Z",2],["A","FeedRate","2026-11-18T05:00:01Z",1],` +
+		`["B","RPM","2026-11-18T05:00:01Z",100],[null,null,null,5]]}`}}
+	ds := newTestDS(t, f, noAuth)
+	tr := backend.TimeRange{From: time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 11, 18, 6, 0, 0, 0, time.UTC)}
+	resp, err := ds.QueryData(context.Background(), &backend.QueryDataRequest{Queries: []backend.DataQuery{{RefID: "A", TimeRange: tr,
+		JSON: []byte(`{"queryType":"cypher","format":"timeseries","cypher":"MATCH (n:T) UNWIND n.P AS v RETURN ... relative(v.Timestamp, $bucket) UNION ALL MATCH ..."}`)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := resp.Responses["A"]
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if len(r.Frames) != 2 || r.Frames[0].Name != "A FeedRate" || r.Frames[1].Name != "B RPM" {
+		t.Fatalf("frames %v", r.Frames)
+	}
+	a := r.Frames[0]
+	if a.Rows() != 2 || !a.Fields[0].At(0).(time.Time).Before(a.Fields[0].At(1).(time.Time)) {
+		t.Fatal("series must be sorted by time")
+	}
+	if a.Fields[1].Labels["entity"] != "A" || a.Fields[1].Labels["property"] != "FeedRate" {
+		t.Fatalf("labels %v", a.Fields[1].Labels)
+	}
+	// 6 hours: the History builder would use minute buckets.
+	if p := f.queries[0]["parameters"].(map[string]any); p["bucket"] != "m" {
+		t.Fatalf("bucket = %v", p["bucket"])
+	}
+}
+
 func TestCypherErrorPassesAtlasDetail(t *testing.T) {
 	r := run(t, newTestDS(t, &fakeAtlas{}, noAuth), `{"queryType":"cypher","cypher":"RETURN foo()"}`)
 	if r.Error == nil || !strings.Contains(r.Error.Error(), "Unknown function 'foo'") || r.Status != backend.StatusBadRequest {

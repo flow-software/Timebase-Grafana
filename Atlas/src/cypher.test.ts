@@ -1,4 +1,4 @@
-import { cypherParameterNames, cypherString, toCypher } from './cypher';
+import { cypherParameterNames, cypherString, historyCypher, toCypher } from './cypher';
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -65,33 +65,6 @@ describe('toCypher history', () => {
     expect(c).toContain('datetime($from)');
   });
 
-  it('writes the raw read for one picked property', () => {
-    const c = toCypher({
-      refId: 'A',
-      queryType: 'history',
-      selection: [{ instance: 'CNC01-Production', property: 'SpindleTemp', type: 'CNCProduction' }],
-    });
-    expect(c).toContain('MATCH (n:CNCProduction) WHERE n.entityId = "CNC01-Production"');
-    expect(c).toContain('RETURN v.Timestamp AS time, v.Value AS SpindleTemp');
-  });
-
-  it('has no single query for whole instances, several picks or an unknown type', () => {
-    expect(toCypher({ refId: 'A', queryType: 'history', selection: [{ instance: 'x', type: 'T' }] })).toBeUndefined();
-    expect(
-      toCypher({
-        refId: 'A',
-        queryType: 'history',
-        selection: [
-          { instance: 'x', property: 'A', type: 'T' },
-          { instance: 'y', property: 'A', type: 'T' },
-        ],
-      })
-    ).toBeUndefined();
-    expect(
-      toCypher({ refId: 'A', queryType: 'history', selection: [{ instance: '$m', property: 'A' }] })
-    ).toBeUndefined();
-  });
-
   it('has no single query for instances or several properties', () => {
     expect(
       toCypher({ refId: 'A', queryType: 'history', scope: 'instance', instanceId: 'x', properties: ['A'] })
@@ -99,5 +72,67 @@ describe('toCypher history', () => {
     expect(
       toCypher({ refId: 'A', queryType: 'history', scope: 'type', entityType: 'T', properties: ['A', 'B'] })
     ).toBeUndefined();
+  });
+});
+
+describe('historyCypher', () => {
+  const nodes = [
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      live: [
+        { name: 'FeedRate', kind: 'number' as const },
+        { name: 'JobNumber', kind: 'text' as const },
+      ],
+    },
+    { id: 'CNC02-Production', type: 'CNCProduction', live: [{ name: 'FeedRate', kind: 'number' as const }] },
+    { id: 'CNC01-SpindleMotor', type: 'MotorType', live: [{ name: 'RPM', kind: 'number' as const }] },
+  ];
+
+  it('writes one typed read per type and property, joined with UNION ALL', () => {
+    const { cypher, error } = historyCypher(
+      {
+        refId: 'A',
+        queryType: 'history',
+        selection: [
+          { instance: 'CNC01-Production' },
+          { instance: 'CNC02-Production', property: 'FeedRate' },
+          { instance: 'CNC01-SpindleMotor' },
+        ],
+      },
+      nodes
+    );
+    expect(error).toBeUndefined();
+    expect(cypher).toContain('MATCH (n:CNCProduction) WHERE n.entityId IN ["CNC01-Production", "CNC02-Production"]');
+    expect(cypher).toContain('MATCH (n:MotorType) WHERE n.entityId IN ["CNC01-SpindleMotor"]');
+    expect(cypher!.split('UNION ALL')).toHaveLength(2);
+    expect(cypher).toContain('relative(v.Timestamp, $bucket) AS time');
+    expect(cypher).toContain('// Left out, not numbers: CNC01-Production JobNumber (text)');
+    expect(cypher).not.toContain(' AS instance');
+  });
+
+  it('reads raw values for Raw and fixed buckets for Hour', () => {
+    const sel = [{ instance: 'CNC02-Production', property: 'FeedRate' }];
+    expect(
+      historyCypher({ refId: 'A', queryType: 'history', aggregation: 'raw', selection: sel }, nodes).cypher
+    ).toContain('v.Timestamp AS time, v.Value AS value');
+    expect(
+      historyCypher(
+        { refId: 'A', queryType: 'history', aggregation: 'hour', includeMinMax: true, selection: sel },
+        nodes
+      ).cypher
+    ).toContain('relative(v.Timestamp, "h") AS time, avg(v.Value) AS value, min(v.Value) AS min');
+  });
+
+  it('explains what cannot be converted', () => {
+    expect(historyCypher({ refId: 'A', queryType: 'history', selection: [{ instance: '$m' }] }, nodes).error).toContain(
+      '$m'
+    );
+    expect(
+      historyCypher(
+        { refId: 'A', queryType: 'history', selection: [{ instance: 'CNC01-Production', property: 'JobNumber' }] },
+        nodes
+      ).error
+    ).toContain('no number values');
   });
 });

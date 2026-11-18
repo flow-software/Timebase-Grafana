@@ -31,7 +31,7 @@ export interface RelationshipColor {
   color: string;
 }
 
-export type CypherFormat = 'auto' | 'table' | 'graph';
+export type CypherFormat = 'auto' | 'table' | 'graph' | 'timeseries';
 
 export interface AtlasQuery extends DataQuery {
   queryType?: AtlasQueryType;

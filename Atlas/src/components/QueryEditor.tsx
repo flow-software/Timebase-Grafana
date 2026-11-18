@@ -17,7 +17,7 @@ import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
 import { TypeField } from './TypeField';
-import { toCypher } from '../cypher';
+import { historyCypher, toCypher } from '../cypher';
 import {
   AtlasOptions,
   AtlasQuery,
@@ -46,6 +46,11 @@ const formats: Array<SelectableValue<CypherFormat>> = [
   { label: 'Auto', value: 'auto', description: 'Node graph when the result has relationships, otherwise a table' },
   { label: 'Table', value: 'table' },
   { label: 'Node graph', value: 'graph' },
+  {
+    label: 'Time series',
+    value: 'timeseries',
+    description: 'One series per combination of the text columns (e.g. entity, property), with the time column',
+  },
 ];
 
 const scopes: Array<SelectableValue<ValuesScope>> = [
@@ -129,6 +134,30 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       description: w.instanceCount !== undefined ? `${w.instanceCount} instances` : undefined,
     }));
   const asCypher = queryType === 'cypher' ? undefined : toCypher(query);
+  // History selections need the browse tree for types and properties, so they are converted on click.
+  const historySelection = queryType === 'history' && (query.selection?.length ?? 0) > 0;
+  const [cypherError, setCypherError] = useState<string>();
+  const editAsCypher = () => {
+    if (!historySelection) {
+      if (asCypher) {
+        update({ queryType: 'cypher', cypher: asCypher, format: 'auto' });
+      }
+      return;
+    }
+    setCypherError(undefined);
+    datasource
+      .getTree(branch, domain)
+      .then((nodes) => {
+        const r = historyCypher(query, nodes);
+        if (r.cypher) {
+          update({ queryType: 'cypher', cypher: r.cypher, format: 'timeseries' });
+        } else {
+          setCypherError(r.error);
+        }
+      })
+      .catch((e) => setCypherError(messageOf(e)));
+  };
+  const canCypher = historySelection || !!asCypher;
 
   return (
     <Stack direction="column" gap={1}>
@@ -188,7 +217,8 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
         </Stack>
       )}
 
-      {(queryType === 'graph' || (queryType === 'cypher' && query.format !== 'table')) && (
+      {(queryType === 'graph' ||
+        (queryType === 'cypher' && (query.format ?? 'auto') !== 'table' && query.format !== 'timeseries')) && (
         <GraphStyle
           query={query}
           onChange={update}
@@ -322,17 +352,18 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
             size="sm"
             variant="secondary"
             icon="brackets-curly"
-            disabled={!asCypher}
-            tooltip={
-              asCypher
-                ? 'Switch to Cypher mode with this query filled in'
-                : 'No single Cypher query matches this; pick an instance or type, or use depth 1'
-            }
-            onClick={() => asCypher && update({ queryType: 'cypher', cypher: asCypher, format: 'auto' })}
+            disabled={!canCypher}
+            tooltip={canCypher ? 'Switch to Cypher mode with this query filled in' : noCypherReason(queryType)}
+            onClick={editAsCypher}
           >
             Edit as Cypher
           </Button>
         </Stack>
+      )}
+      {cypherError && queryType !== 'cypher' && (
+        <Alert severity="warning" title="Could not write this as Cypher" onRemove={() => setCypherError(undefined)}>
+          {cypherError}
+        </Alert>
       )}
 
       {loadError && (
@@ -555,6 +586,17 @@ function LimitField({
       />
     </InlineField>
   );
+}
+
+function noCypherReason(queryType: string): string {
+  switch (queryType) {
+    case 'graph':
+      return 'Atlas returns internal ids for multi-hop paths, so depth 2 to 4 has no single Cypher query; use depth 1';
+    case 'history':
+      return 'Select series first';
+    default:
+      return 'Pick an instance or a type first';
+  }
 }
 
 function unique(list: string[]): string[] {
