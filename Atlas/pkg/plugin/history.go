@@ -68,6 +68,7 @@ type historyTarget struct {
 	Prop    string
 	IDs     []string // empty means every instance of the type
 	Numeric bool     // false for text and boolean properties: never bucketed
+	Record  bool     // a compound with its own Timestamp: read raw, one column per part
 }
 
 // historyPick is one entry of a History selection: one property of an
@@ -130,7 +131,7 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			a := agg
-			if !t.Numeric {
+			if !t.Numeric || t.Record {
 				a = aggRaw
 			}
 			f, notice, err := d.readHistory(ctx, branch, domain, t, a, from, to, qm, labels)
@@ -269,7 +270,7 @@ func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string
 			continue
 		}
 		for _, p := range cleanProps(want[id]) {
-			if v, has := n[p]; !has || !isTVQ(v) {
+			if v, has := n[p]; !has || !hasHistory(v) {
 				skipped = append(skipped, id+" "+p)
 			}
 		}
@@ -319,7 +320,7 @@ func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []strin
 		}
 		for _, p := range propsOf(n) {
 			v, ok := n[p]
-			if !ok || !isTVQ(v) {
+			if !ok || !hasHistory(v) {
 				continue
 			}
 			key := typ + "\x00" + p
@@ -331,6 +332,10 @@ func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []strin
 			}
 			if !wholeType {
 				t.IDs = append(t.IDs, id)
+			}
+			if isRecord(v) {
+				t.Record = true
+				continue
 			}
 			switch v.(map[string]any)["Value"].(type) {
 			case float64:
@@ -364,7 +369,9 @@ func historyCypher(t historyTarget, agg string) (string, map[string]any) {
 	}
 	b.WriteString(" UNWIND n." + t.Prop + " AS v")
 	b.WriteString(" WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)")
-	if unit, ok := bucketUnit[agg]; ok {
+	if t.Record {
+		b.WriteString(" RETURN n.entityId AS id, v.Timestamp AS t, v AS value ORDER BY t LIMIT " + strconv.Itoa(maxHistoryRows+1))
+	} else if unit, ok := bucketUnit[agg]; ok {
 		b.WriteString(` RETURN n.entityId AS id, relative(v.Timestamp, "` + unit + `") AS t, avg(v.Value) AS avg, min(v.Value) AS min, max(v.Value) AS max, count(v) AS n ORDER BY t`)
 	} else {
 		b.WriteString(" RETURN n.entityId AS id, v.Timestamp AS t, v.Value AS value, v.Quality AS quality ORDER BY t LIMIT " + strconv.Itoa(maxHistoryRows+1))
@@ -407,6 +414,10 @@ func (d *Datasource) readHistory(ctx context.Context, branch, domain string, t h
 
 	var frames data.Frames
 	for _, id := range ids {
+		if t.Record {
+			frames = append(frames, recordFrame(id, labels[id], t.Prop, byID[id]))
+			continue
+		}
 		frames = append(frames, historyFrame(id, labels[id], t.Prop, byID[id], agg, qm))
 	}
 	return frames, notice, nil
@@ -475,6 +486,53 @@ func historyFrame(id, label, prop string, rows [][]any, agg string, qm queryMode
 	return f
 }
 
+// recordFrame builds one frame for a record property: Time plus a column per
+// part (MxStatus, MxPriority, ...), named "<instance> <property>.<part>".
+func recordFrame(id, label, prop string, rows [][]any) *data.Frame {
+	if label == "" {
+		label = id
+	}
+	name := label + " " + prop
+	var times []time.Time
+	cols := map[string]*column{}
+	var order []string
+	for _, r := range rows {
+		ts := parseTime(str(cell(r, 1)))
+		if ts == nil {
+			continue
+		}
+		m, _ := asMap(cell(r, 2))
+		parts := map[string]any{}
+		for k, v := range m {
+			if k == "Timestamp" {
+				continue
+			}
+			for _, e := range flattenValue(nil, k, v, nil) {
+				parts[e.Prop] = e.Value
+			}
+		}
+		for k := range parts {
+			if _, ok := cols[k]; !ok {
+				cols[k] = &column{name: k, cells: make([]any, len(times))}
+				order = append(order, k)
+			}
+		}
+		times = append(times, *ts)
+		for _, k := range order {
+			cols[k].cells = append(cols[k].cells, parts[k])
+		}
+	}
+	sort.Strings(order)
+	f := data.NewFrame(name, data.NewField("Time", nil, times))
+	for _, k := range order {
+		fl := cols[k].field()
+		fl.Labels = data.Labels{"instance": id, "property": prop, "part": k}
+		fl.SetConfig(&data.FieldConfig{DisplayNameFromDS: name + "." + k})
+		f.Fields = append(f.Fields, fl)
+	}
+	return f
+}
+
 func cell(r []any, i int) any {
 	if i < len(r) {
 		return r[i]
@@ -505,7 +563,7 @@ func cleanProps(in []string) []string {
 // PropertyOption is one live (time-series) property: its value kind and how many nodes have it.
 type PropertyOption struct {
 	Name  string `json:"name"`
-	Kind  string `json:"kind"` // number, text, boolean or unknown (no current value)
+	Kind  string `json:"kind"` // number, text, boolean, record (compound with a Timestamp) or unknown (no current value)
 	Count int    `json:"count"`
 }
 
@@ -514,7 +572,7 @@ func liveProperties(nodes []map[string]any) []PropertyOption {
 	byName := map[string]*PropertyOption{}
 	for _, n := range nodes {
 		for k, v := range n {
-			if nodeMetaKeys[k] || !isTVQ(v) || !labelPattern.MatchString(k) {
+			if nodeMetaKeys[k] || !hasHistory(v) || !labelPattern.MatchString(k) {
 				continue
 			}
 			p, ok := byName[k]
@@ -523,6 +581,10 @@ func liveProperties(nodes []map[string]any) []PropertyOption {
 				byName[k] = p
 			}
 			p.Count++
+			if isRecord(v) {
+				p.Kind = "record"
+				continue
+			}
 			switch v.(map[string]any)["Value"].(type) {
 			case float64:
 				p.Kind = "number"

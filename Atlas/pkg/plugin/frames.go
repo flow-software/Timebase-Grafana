@@ -60,6 +60,20 @@ func isTVQ(v any) bool {
 	return val && ts && len(m) <= 3
 }
 
+// isRecord reports a compound value with its own Timestamp that is not a
+// TVQ, such as MaintainX LiveAsset. Atlas stores its history like a TVQ's.
+func isRecord(v any) bool {
+	m, ok := asMap(v)
+	if !ok || isTVQ(m) {
+		return false
+	}
+	_, ts := m["Timestamp"]
+	return ts
+}
+
+// hasHistory reports a property whose values Atlas keeps over time.
+func hasHistory(v any) bool { return isTVQ(v) || isRecord(v) }
+
 func str(v any) string {
 	s, _ := v.(string)
 	return s

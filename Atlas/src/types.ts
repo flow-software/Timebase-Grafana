@@ -143,5 +143,6 @@ export interface TreeNodeData {
 
 export interface LiveProperty {
   name: string;
-  kind: 'number' | 'text' | 'boolean' | 'unknown';
+  /** record: a compound with its own timestamp (e.g. MaintainX LiveAsset), read as one column per part. */
+  kind: 'number' | 'text' | 'boolean' | 'record' | 'unknown';
 }

@@ -84,15 +84,6 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
       return next;
     });
 
-  const toggleInstance = (id: string) =>
-    change((next) => {
-      if (next.get(id) === 'all') {
-        next.delete(id);
-      } else {
-        next.set(id, 'all');
-      }
-    });
-
   const toggleProperty = (n: TreeNodeData, prop: string) =>
     change((next) => {
       const cur = next.get(n.id);
@@ -112,13 +103,22 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
       }
     });
 
-  const toggleNested = (item: PickItem) => {
-    const ids = liveDescendants(item);
-    const allOn = ids.every((id) => picked.get(id) === 'all');
-    change((next) => ids.forEach((id) => (allOn ? next.delete(id) : next.set(id, 'all'))));
-    if (!allOn) {
-      setExpanded((prev) => new Set([...prev, item.node.id]));
+  /**
+   * The row checkbox covers the instance and everything nested under it that
+   * has live values: ticked when all of them are picked whole, a dash when
+   * some are picked, empty when none are. Ticking picks all of them whole;
+   * ticking a full row clears them.
+   */
+  const rowState = (ids: string[]): 'all' | 'some' | 'none' => {
+    if (ids.length > 0 && ids.every((id) => picked.get(id) === 'all')) {
+      return 'all';
     }
+    return ids.some((id) => picked.has(id)) ? 'some' : 'none';
+  };
+
+  const toggleRow = (ids: string[]) => {
+    const clear = rowState(ids) === 'all';
+    change((next) => ids.forEach((id) => (clear ? next.delete(id) : next.set(id, 'all'))));
   };
 
   let rowsLeft = MAX_FILTERED_ROWS;
@@ -131,9 +131,14 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     const cur = picked.get(n.id);
     const hasBody = item.children.length > 0 || item.props.length > 0;
     const open = filtering || expanded.has(n.id);
-    const nested = item.children.length > 0 ? liveDescendants(item) : [];
+    const covered = liveDescendants(item);
+    const state = rowState(covered);
     // A closed row says how many picks are hidden under it.
-    const hidden = open ? 0 : nested.filter((id) => id !== n.id && picked.has(id)).length;
+    const hidden = open ? 0 : covered.filter((id) => id !== n.id && picked.has(id)).length;
+    const title =
+      covered.length > 1
+        ? `${live.length ? 'This instance and ' : ''}${covered.length - (live.length ? 1 : 0)} nested instances with live values`
+        : 'All live values of this instance';
     return (
       <li key={n.id}>
         <div className={cx(styles.row, cur && styles.selected)} style={{ paddingLeft: depth * 20 }} role="treeitem">
@@ -147,20 +152,25 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
           ) : (
             <span className={styles.spacer} />
           )}
-          {live.length > 0 ? (
-            <Checkbox
-              value={cur === 'all'}
-              indeterminate={cur instanceof Set}
-              onChange={() => toggleInstance(n.id)}
-              aria-label={`All live values of ${nodeName(n)}`}
-            />
+          {covered.length > 0 ? (
+            <span title={title} className={styles.boxWrap}>
+              {/* Keyed by state: Grafana's Checkbox sets the DOM indeterminate flag but never clears it. */}
+              <Checkbox
+                key={state}
+                value={state === 'all'}
+                indeterminate={state === 'some'}
+                onChange={() => toggleRow(covered)}
+                aria-label={`${nodeName(n)}: ${title}`}
+              />
+            </span>
           ) : (
             <span className={styles.box} />
           )}
           <button
             type="button"
             className={styles.label}
-            onClick={() => (live.length > 0 ? toggleInstance(n.id) : hasBody && !filtering && toggleOpen(n.id))}
+            title={covered.length > 0 ? title : undefined}
+            onClick={() => (covered.length > 0 ? toggleRow(covered) : hasBody && !filtering && toggleOpen(n.id))}
           >
             <span className={styles.name}>{nodeName(n)}</span>
             <span className={styles.meta}>
@@ -169,15 +179,6 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
             </span>
             {hidden > 0 && <span className={styles.hidden}>{hidden} selected inside</span>}
           </button>
-          {nested.length > 1 && (
-            <IconButton
-              name="layers-alt"
-              size="sm"
-              className={styles.nested}
-              tooltip={`Tick ${nested.length} nested instances with live values (again to untick)`}
-              onClick={() => toggleNested(item)}
-            />
-          )}
         </div>
         {hasBody && open && (
           <ul className={styles.list}>
@@ -193,9 +194,15 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
                       aria-label={`${nodeName(n)} ${p.name}`}
                     />
                     <button type="button" className={styles.label} onClick={() => toggleProperty(n, p.name)}>
-                      <Icon name="chart-line" size="sm" className={styles.propIcon} />
+                      <Icon
+                        name={p.kind === 'record' ? 'list-ul' : 'chart-line'}
+                        size="sm"
+                        className={styles.propIcon}
+                      />
                       <span>{p.name}</span>
-                      <span className={styles.meta}>{p.kind}</span>
+                      <span className={styles.meta}>
+                        {p.kind === 'record' ? 'record: one column per part' : p.kind}
+                      </span>
                     </button>
                   </div>
                 </li>
@@ -246,7 +253,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
           <div className={styles.summary}>
             {filtering
               ? `${tree.matches} matches` + (tree.matches > MAX_FILTERED_ROWS ? '; refine the filter to see all' : '')
-              : `${liveCount} instances with live values. Tick an instance for all its values, or open it to pick single properties.`}
+              : `${liveCount} instances with live values. Tick a row for it and everything under it, or open it to pick single properties.`}
           </div>
           <div className={styles.scroll}>
             <ul className={styles.list} role="tree">
@@ -365,7 +372,7 @@ const getStyles = (theme: GrafanaTheme2) => ({
     whiteSpace: 'nowrap',
   }),
   propIcon: css({ color: theme.colors.text.secondary, alignSelf: 'center' }),
-  nested: css({ marginRight: theme.spacing(0.5) }),
+  boxWrap: css({ display: 'inline-flex', flexShrink: 0 }),
   footer: css({
     display: 'flex',
     alignItems: 'center',

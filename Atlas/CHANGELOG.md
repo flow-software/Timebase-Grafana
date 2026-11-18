@@ -2,7 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
-- History query: stored values of live properties over the panel time range. Instances and single properties are picked together in one tree, with properties listed under each instance; ids and `$variables` can be typed too. Raw points or minute / hour / day averages (Auto picks from the range), optional min/max and quality. Series are labelled `instance` and `property` and work in alert rules.
+- History query: stored values of live properties over the panel time range. Instances and single properties are picked together in one tree, with properties listed under each instance; ticking a row picks it and everything nested under it; ids and `$variables` can be typed too. Record properties (fields with one timestamp, e.g. MaintainX LiveAsset) are read as a column per field. Raw points or minute / hour / day averages (Auto picks from the range), optional min/max and quality. Series are labelled `instance` and `property` and work in alert rules.
 - Cypher: `$from` and `$to` are filled from the panel time range; ISO timestamp columns become time fields, so Cypher history queries work in time series panels.
 - Demo dashboard: History panels.
 
