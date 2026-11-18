@@ -1,3 +1,4 @@
+import { expandSelection, shortType } from './tree';
 import { AtlasQuery, TreeNodeData } from './types';
 
 /**
@@ -56,12 +57,8 @@ export function toCypher(q: AtlasQuery): string | undefined {
     case 'values':
     case 'instances': {
       if (q.queryType === 'values' && q.selection?.length) {
-        // Whole instances: Cypher returns every property, not only the picked ones.
-        const ids = Array.from(new Set(q.selection.map((p) => p.instance)));
-        if (ids.some((id) => id.includes('$'))) {
-          return undefined;
-        }
-        return `MATCH (n)\nWHERE n.entityId IN [${ids.map(cypherString).join(', ')}]\nRETURN n`;
+        // A selection needs the tree for nested and type picks: see valuesCypher.
+        return undefined;
       }
       const scope = q.queryType === 'instances' ? 'type' : (q.scope ?? 'instance');
       if (scope === 'instance' && q.instanceId) {
@@ -106,12 +103,35 @@ const PLOTTABLE = new Set(['number', 'unknown']);
  * the "Time series" output format. Auto aggregation uses $bucket, which the
  * plugin fills from the time range like the builder does.
  */
+/**
+ * The Cypher for a Current selection. One whole type gives MATCH (n:Type),
+ * which follows new instances; anything else is the picked instances by id
+ * (whole nodes: Cypher returns every property, not only picked ones).
+ */
+export function valuesCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: string; error?: string } {
+  const sel = q.selection ?? [];
+  const types = new Set(sel.map((p) => (p.scope === 'type' && !p.property && p.type ? shortType(p.type) : '')));
+  const only = [...types][0];
+  if (sel.length > 0 && types.size === 1 && only && IDENT.test(only)) {
+    return { cypher: `MATCH (n:${only})\nRETURN n` };
+  }
+  const ids = Array.from(new Set(expandSelection(sel, nodes).map((p) => p.instance)));
+  const outside = ids.filter((id) => !nodes.some((n) => n.id === id));
+  if (outside.length) {
+    return { error: `Not in this domain's tree (variables cannot be turned into Cypher): ${outside.join(', ')}` };
+  }
+  if (ids.length === 0) {
+    return { error: 'No instance matches the selection.' };
+  }
+  return { cypher: `MATCH (n)\nWHERE n.entityId IN [${ids.map(cypherString).join(', ')}]\nRETURN n` };
+}
+
 export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: string; error?: string } {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const groups = new Map<string, { type: string; prop: string; ids: string[] }>();
   const missing: string[] = [];
   const left: string[] = [];
-  for (const pick of q.selection ?? []) {
+  for (const pick of expandSelection(q.selection ?? [], nodes)) {
     const n = byId.get(pick.instance);
     if (!n) {
       missing.push(pick.instance);

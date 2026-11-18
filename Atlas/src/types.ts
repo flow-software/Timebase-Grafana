@@ -77,12 +77,19 @@ export interface AtlasQuery extends DataQuery {
   format?: CypherFormat;
 }
 
-/** One History pick: a property of an instance, or the whole instance. */
+/**
+ * One pick of the Data selection: a property (or, without one, every
+ * property) of an instance, of an instance and everything nested under it
+ * (scope "nested"), or of every instance of a type (scope "type", instance
+ * empty). Nested and type picks are resolved when the query runs, so they
+ * follow instances added in Atlas.
+ */
 export interface HistoryPick {
   instance: string;
   property?: string;
-  /** Entity type when picked from the tree; used for "Edit as Cypher" only. */
+  /** The instance's entity type when picked from the tree; for scope "type", the type to read. */
   type?: string;
+  scope?: 'nested' | 'type';
 }
 
 export const DEFAULT_QUERY: Partial<AtlasQuery> = {

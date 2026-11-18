@@ -30,9 +30,11 @@ One selection, two ways to show it. **Show**: _Current_ gives the latest value o
 
 - tick a row to read all live values of that instance and of everything nested under it (a dash means part of it is picked);
 - open an instance and tick single properties;
-- **Only with live values** hides instances without live values; the filter matches instance names, ids, types and property names.
+- the filter matches instance names, ids, types and property names.
 
-Ids and dashboard variables that are not in the tree can be typed next to the button: `$machine-Production` for all its live values, `$machine-Production/FeedRate` for one property. A multi-value variable gives one pick per value.
+Ticking a row with instances nested under it picks it **with everything nested**: the query reads whatever is nested under it when it runs, so instances added later are included. Unticking part of it turns it into single picks. The **Types** view picks **every instance of a type** (or one property of every instance), also resolved when the query runs.
+
+Ids, dashboard variables and types can be typed next to the button: `$machine-Production` for all its live values, `$machine-Production/FeedRate` for one property, `type:CNCProduction/FeedRate` for that property of every CNCProduction. A multi-value variable gives one pick per value. The tree icon on a chip switches an instance (or a `$variable`) to include everything nested under it.
 
 A whole instance shows every property; a picked property only that one.
 
@@ -40,7 +42,7 @@ A whole instance shows every property; a picked property only that one.
 
 **Layout**: _Row per property_ gives Instance, Property, Value, Quality, Quality code and Time on each row. _Row per instance_ gives one row per instance and a column per property, to compare instances; switch on **Quality** and **Timestamps** to add a column of each next to every live value. Compound properties are split into parts, for example `LiveAsset.MxAssetName`. Quality is named from the OPC quality code: Good, Uncertain, Bad, or No data when there is no value. Current shows a value however long ago it last changed.
 
-Queries saved before 0.2.0 that read an instance with everything nested under it, or every instance of a type, still run and are marked in the editor; selecting instances replaces them.
+Queries saved before 0.2.0 (Values or History of an instance, of an instance with everything nested under it, or of a type) open as the matching selection.
 
 #### Trend
 
