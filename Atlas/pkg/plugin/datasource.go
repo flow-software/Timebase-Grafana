@@ -142,11 +142,9 @@ type queryModel struct {
 	Selection []historyPick `json:"selection"`
 
 	// History: live properties to read, and raw points or buckets.
-	Properties  []string `json:"properties"`
-	Aggregation string   `json:"aggregation"`
-	// IncludeMinMax adds each bucket's min and max, drawn as a band around
-	// the average. Unset means on, so peaks are not averaged away.
-	IncludeMinMax *bool `json:"includeMinMax"`
+	Properties    []string `json:"properties"`
+	Aggregation   string   `json:"aggregation"`
+	IncludeMinMax bool     `json:"includeMinMax"`
 
 	// Graph and Cypher graph output.
 	ColorBy           string `json:"colorBy"`
@@ -155,6 +153,8 @@ type queryModel struct {
 
 	// The datasource running the query, for the node links. Not part of the JSON.
 	dsUID, dsName string
+	// The panel's max data points, for Auto history. Not part of the JSON.
+	maxPoints int
 }
 
 // badRequest is an error caused by the query itself, not by Atlas.
@@ -205,6 +205,7 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery, dsUID, 
 	case queryCypher:
 		frames, err = d.cypherQuery(ctx, branch, domain, qm, query.TimeRange)
 	case queryHistory:
+		qm.maxPoints = int(query.MaxDataPoints)
 		frames, err = d.historyQuery(ctx, branch, domain, qm, query.TimeRange.From, query.TimeRange.To)
 	default:
 		err = badRequest(fmt.Sprintf("unsupported query type %q", qm.QueryType))
