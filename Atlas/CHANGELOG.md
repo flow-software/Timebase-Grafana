@@ -7,6 +7,7 @@
 - Cypher: "Time series" output format (one series per combination of the text columns); "Edit as Cypher" writes a whole History selection as typed reads joined with `UNION ALL`. `$bucket` is filled with the History builder's bucket unit for the range.
 - Cypher: `$from` and `$to` are filled from the panel time range; ISO timestamp columns become time fields, so Cypher history queries work in time series panels.
 - Demo dashboard: History panels.
+- Property kinds in the picker and for Trend come from the Atlas type definitions (entity types, pins), not only the current value, so properties with an empty current value no longer show as "unknown".
 - Fix: Auto Trend of a text property whose current value is empty returned Atlas 500; it is now read raw.
 
 ## 0.1.0 (2026-11-16)
