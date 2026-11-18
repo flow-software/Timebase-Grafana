@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { GrafanaTheme2 } from '@grafana/data';
+import { GrafanaTheme2, IconName } from '@grafana/data';
 import {
   Alert,
   Button,
@@ -15,7 +15,16 @@ import {
 } from '@grafana/ui';
 
 import { ancestorsOf, buildTree, liveDescendants, nodeName, PickItem, pickTree } from '../tree';
-import { HistoryPick, TreeNodeData } from '../types';
+import { HistoryPick, LiveProperty, TreeNodeData } from '../types';
+
+/** Property icons, the same ones Grafana uses for field types. */
+const KIND_ICONS: Record<LiveProperty['kind'], IconName> = {
+  number: 'calculator-alt',
+  text: 'font',
+  boolean: 'toggle-on',
+  record: 'brackets-curly',
+  unknown: 'question-circle',
+};
 
 interface Props {
   isOpen: boolean;
@@ -194,11 +203,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
                       aria-label={`${nodeName(n)} ${p.name}`}
                     />
                     <button type="button" className={styles.label} onClick={() => toggleProperty(n, p.name)}>
-                      <Icon
-                        name={p.kind === 'record' ? 'list-ul' : 'chart-line'}
-                        size="sm"
-                        className={styles.propIcon}
-                      />
+                      <Icon name={KIND_ICONS[p.kind]} size="sm" className={styles.propIcon} />
                       <span>{p.name}</span>
                       <span className={styles.meta}>
                         {p.kind === 'record' ? 'record: one column per part' : p.kind}
