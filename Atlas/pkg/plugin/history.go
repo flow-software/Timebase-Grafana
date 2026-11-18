@@ -139,6 +139,13 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 				a = aggRaw
 			}
 			f, notice, err := d.readHistory(ctx, branch, domain, t, a, from, to, qm, labels)
+			if err != nil && a != aggRaw && ctx.Err() == nil {
+				// A property whose current value is empty looks like a number
+				// but may hold text; Atlas fails to average text (500). Read it raw.
+				if rf, rn, rerr := d.readHistory(ctx, branch, domain, t, aggRaw, from, to, qm, labels); rerr == nil {
+					f, notice, err = rf, rn, nil
+				}
+			}
 			results[i] = result{f, err, notice}
 		}(i, t)
 	}
@@ -701,13 +708,15 @@ func (d *Datasource) readPeaks(ctx context.Context, branch, domain string, t his
 
 	byID := map[string][]sample{}
 	var ids []string
+	seen := map[string]bool{}
 	for _, r := range rows {
 		ts := parseTime(str(cell(r, 1)))
 		if ts == nil {
 			continue
 		}
 		id := str(cell(r, 0))
-		if _, ok := byID[id]; !ok {
+		if !seen[id] {
+			seen[id] = true
 			ids = append(ids, id)
 		}
 		if src == aggRaw {

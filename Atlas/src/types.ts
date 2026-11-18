@@ -3,7 +3,9 @@ import { DataQuery } from '@grafana/schema';
 
 /**
  * graph: Node Graph of the whole domain or around one instance.
- * values: current values of one instance, an instance and what it contains, or every instance of a type.
+ * values: the Data tab's Current mode: latest values of the selection (older
+ *   queries: one instance, an instance and what it contains, or every instance of a type).
+ * history: the Data tab's Trend mode: stored values of the selection over the time range.
  * cypher: a read-only Cypher query written by the user.
  * instances: saved by older versions; read as values with scope "type".
  */
@@ -45,7 +47,7 @@ export interface AtlasQuery extends DataQuery {
   scope?: ValuesScope;
   layout?: ValuesLayout;
   /**
-   * History: the series to read, picked in the browse modal. A pick without a
+   * Data tab (Current and Trend): the instances and properties picked in the browse modal. A pick without a
    * property reads every live property of the instance. Instance ids may be
    * $variables; a multi-value variable gives one pick per value.
    */

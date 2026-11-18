@@ -55,6 +55,14 @@ export function toCypher(q: AtlasQuery): string | undefined {
     }
     case 'values':
     case 'instances': {
+      if (q.queryType === 'values' && q.selection?.length) {
+        // Whole instances: Cypher returns every property, not only the picked ones.
+        const ids = Array.from(new Set(q.selection.map((p) => p.instance)));
+        if (ids.some((id) => id.includes('$'))) {
+          return undefined;
+        }
+        return `MATCH (n)\nWHERE n.entityId IN [${ids.map(cypherString).join(', ')}]\nRETURN n`;
+      }
       const scope = q.queryType === 'instances' ? 'type' : (q.scope ?? 'instance');
       if (scope === 'instance' && q.instanceId) {
         return `MATCH (n)\nWHERE n.entityId = ${cypherString(q.instanceId)}\nRETURN n`;

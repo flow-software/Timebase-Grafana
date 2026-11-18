@@ -28,4 +28,9 @@ describe('upgrade', () => {
     expect(q.selection).toBeUndefined();
     expect(q.properties).toEqual(['A']);
   });
+
+  it('turns older Values of one instance into a selection, but leaves a type as saved', () => {
+    expect(upgrade({ refId: 'A', queryType: 'values', instanceId: 'X' }).selection).toEqual([{ instance: 'X' }]);
+    expect(upgrade({ refId: 'A', queryType: 'values', scope: 'type', entityType: 'T' }).selection).toBeUndefined();
+  });
 });

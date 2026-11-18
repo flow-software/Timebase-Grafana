@@ -109,6 +109,9 @@ func qualityText(code *int64, value any) string {
 }
 
 func (d *Datasource) valuesQuery(ctx context.Context, branch, domain string, qm queryModel) (data.Frames, error) {
+	if len(qm.Selection) > 0 {
+		return d.selectionValues(ctx, branch, domain, qm)
+	}
 	limit := clampLimit(qm.Limit, defaultTableLimit)
 	scope := qm.Scope
 	if scope == "" {
@@ -287,4 +290,76 @@ func jsonText(v any) string {
 	}
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// selectionValues: the current values of a selection picked in the browse
+// modal (the same picks as History). A whole-instance pick shows every
+// property; a property pick shows only that property (a record expands into
+// its parts). Instances keep the order they were picked in.
+func (d *Datasource) selectionValues(ctx context.Context, branch, domain string, qm queryModel) (data.Frames, error) {
+	var ids []string
+	props := map[string]map[string]bool{} // nil set: the whole instance
+	for _, p := range qm.Selection {
+		id := strings.TrimSpace(p.Instance)
+		if id == "" {
+			continue
+		}
+		set, seen := props[id]
+		if !seen {
+			ids = append(ids, id)
+		}
+		prop := strings.TrimSpace(p.Property)
+		switch {
+		case prop == "":
+			props[id] = nil
+		case !seen:
+			props[id] = map[string]bool{prop: true}
+		case set != nil:
+			set[prop] = true
+		}
+	}
+	if len(ids) == 0 {
+		return nil, badRequest("pick at least one instance or property")
+	}
+	if len(ids) > maxPickedInstances {
+		return nil, badRequest(fmt.Sprintf("pick at most %d instances", maxPickedInstances))
+	}
+	found, err := d.nodes(ctx, branch, domain, "MATCH (n) WHERE n.entityId IN $ids RETURN n", map[string]any{"ids": ids})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]map[string]any, len(found))
+	for _, n := range found {
+		byID[str(n["entityId"])] = n
+	}
+	var nodes []map[string]any
+	var missing []string
+	for _, id := range ids {
+		n, ok := byID[id]
+		if !ok {
+			missing = append(missing, id)
+			continue
+		}
+		if set := props[id]; set != nil {
+			kept := map[string]any{}
+			for k, v := range n {
+				if nodeMetaKeys[k] || set[k] {
+					kept[k] = v
+				}
+			}
+			n = kept
+		}
+		nodes = append(nodes, n)
+	}
+
+	var frame *data.Frame
+	if qm.Layout == layoutColumns {
+		frame = nodesTable("values", nodes, tableOptions{IncludeQuality: qm.IncludeQuality, IncludeTime: qm.IncludeTime})
+	} else {
+		frame = rowsTable("values", nodes, len(nodes) > 1)
+	}
+	if len(missing) > 0 {
+		addNotice(frame, data.NoticeSeverityWarning, fmt.Sprintf("Not found in %s/%s: %s", branch, domain, strings.Join(missing, ", ")))
+	}
+	return data.Frames{frame}, nil
 }
