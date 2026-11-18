@@ -40,7 +40,16 @@ Compound properties are split into parts, for example `LiveAsset.MxAssetName`, e
 
 ### History
 
-Reads the stored values of live properties (those with a timestamp and quality, such as FeedRate) over the panel's time range. Pick what to read the same way as for Values (**Instances**, **Nested Instances** or **Types**), then one or more **Properties**. Each instance and property becomes one series, labelled `instance` and `property`, so the query also works in alert rules.
+Reads the stored values of live properties (those with a timestamp and quality, such as FeedRate) over the panel's time range. **Select instances and properties** opens the instance tree, nested as in Atlas, with each instance's live properties listed under it:
+
+- tick an instance to read all its live values (properties added later are included);
+- open an instance and tick single properties;
+- the stacked-squares button on a row ticks every instance nested under it that has live values;
+- **Only with history** hides instances without live values; the filter matches instance names, ids, types and property names.
+
+Ids and dashboard variables that are not in the tree can be typed next to the button: `$machine-Production` for all its live values, `$machine-Production/FeedRate` for one property. A multi-value variable gives one pick per value.
+
+Each instance and property becomes one series, labelled `instance` and `property`, so the query also works in alert rules.
 
 **Aggregation**: _Auto_ reads every value for ranges up to 3 hours, then averages per minute (up to 3 days), per hour (up to 180 days) or per day. _Raw_, _Minute_, _Hour_ and _Day_ force one. Text and boolean properties are always read raw. **Min/max** adds the bucket minimum and maximum; **Quality** adds the OPC quality code of each raw value.
 

@@ -44,7 +44,13 @@ export interface AtlasQuery extends DataQuery {
   entityType?: string;
   scope?: ValuesScope;
   layout?: ValuesLayout;
-  /** History: live properties to read, e.g. FeedRate. */
+  /**
+   * History: the series to read, picked in the browse modal. A pick without a
+   * property reads every live property of the instance. Instance ids may be
+   * $variables; a multi-value variable gives one pick per value.
+   */
+  selection?: HistoryPick[];
+  /** History saved before selection existed: live properties of instanceId / entityType. */
   properties?: string[];
   aggregation?: Aggregation;
   /** History buckets: add min and max next to the average. */
@@ -67,6 +73,14 @@ export interface AtlasQuery extends DataQuery {
   /** Filled in at query time from Grafana variables. Not edited by the user. */
   parameters?: Record<string, unknown>;
   format?: CypherFormat;
+}
+
+/** One History pick: a property of an instance, or the whole instance. */
+export interface HistoryPick {
+  instance: string;
+  property?: string;
+  /** Entity type when picked from the tree; used for "Edit as Cypher" only. */
+  type?: string;
 }
 
 export const DEFAULT_QUERY: Partial<AtlasQuery> = {
@@ -123,11 +137,11 @@ export interface TreeNodeData {
   label?: string;
   type: string;
   parentId?: string;
+  /** Live properties (with stored history) and their value kind. */
+  live?: LiveProperty[];
 }
 
-/** GET resources/properties: a live property with its value kind. */
-export interface PropertyOption {
+export interface LiveProperty {
   name: string;
   kind: 'number' | 'text' | 'boolean' | 'unknown';
-  count: number;
 }

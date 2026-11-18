@@ -70,24 +70,44 @@ type historyTarget struct {
 	Numeric bool     // false for text and boolean properties: never bucketed
 }
 
-func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm queryModel, from, to time.Time) (data.Frames, error) {
-	props := cleanProps(qm.Properties)
-	if len(props) == 0 {
-		return nil, badRequest("pick at least one property")
-	}
-	for _, p := range props {
-		if !labelPattern.MatchString(p) {
-			return nil, badRequest(fmt.Sprintf("property %q is not a plain name", p))
-		}
-	}
+// historyPick is one entry of a History selection: one property of an
+// instance, or (Property empty) every live property of it.
+type historyPick struct {
+	Instance string `json:"instance"`
+	Property string `json:"property,omitempty"`
+}
 
-	nodes, scopeErr := d.scopeNodes(ctx, branch, domain, qm)
-	if scopeErr != nil {
-		return nil, scopeErr
-	}
-	targets, labels := historyTargets(nodes, props, qm.Scope == scopeType)
-	if len(targets) == 0 {
-		return nil, badRequest(fmt.Sprintf("none of the selected instances has a live value called %s", strings.Join(props, " or ")))
+// maxPickedInstances bounds one History selection.
+const maxPickedInstances = 1000
+
+func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm queryModel, from, to time.Time) (data.Frames, error) {
+	var targets []historyTarget
+	var labels map[string]string
+	var pickNotice string
+	if len(qm.Selection) > 0 {
+		var err error
+		targets, labels, pickNotice, err = d.selectionTargets(ctx, branch, domain, qm.Selection)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		props := cleanProps(qm.Properties)
+		if len(props) == 0 {
+			return nil, badRequest("pick at least one instance or property")
+		}
+		for _, p := range props {
+			if !labelPattern.MatchString(p) {
+				return nil, badRequest(fmt.Sprintf("property %q is not a plain name", p))
+			}
+		}
+		nodes, scopeErr := d.scopeNodes(ctx, branch, domain, qm)
+		if scopeErr != nil {
+			return nil, scopeErr
+		}
+		targets, labels = historyTargets(nodes, func(map[string]any) []string { return props }, qm.Scope == scopeType)
+		if len(targets) == 0 {
+			return nil, badRequest(fmt.Sprintf("none of the selected instances has a live value called %s", strings.Join(props, " or ")))
+		}
 	}
 
 	agg := qm.Aggregation
@@ -121,6 +141,9 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 
 	var frames data.Frames
 	var notices []string
+	if pickNotice != "" {
+		notices = append(notices, pickNotice)
+	}
 	for _, r := range results {
 		if r.err != nil {
 			return nil, r.err
@@ -193,9 +216,97 @@ func (d *Datasource) scopeNodes(ctx context.Context, branch, domain string, qm q
 	return nil, badRequest(fmt.Sprintf("unknown scope %q", qm.Scope))
 }
 
+// selectionTargets reads the picked instances and turns the picks into
+// targets. A pick without a property takes every live property of the
+// instance. The notice names picks that give no series.
+func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string, picks []historyPick) ([]historyTarget, map[string]string, string, error) {
+	want := map[string][]string{} // instance -> named properties
+	all := map[string]bool{}      // instance picked whole
+	var ids []string
+	for _, p := range picks {
+		id := strings.TrimSpace(p.Instance)
+		prop := strings.TrimSpace(p.Property)
+		if id == "" {
+			continue
+		}
+		if prop != "" && !labelPattern.MatchString(prop) {
+			return nil, nil, "", badRequest(fmt.Sprintf("property %q is not a plain name", prop))
+		}
+		if _, seen := want[id]; !seen {
+			ids = append(ids, id)
+			want[id] = nil
+		}
+		if prop == "" {
+			all[id] = true
+		} else {
+			want[id] = append(want[id], prop)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil, "", badRequest("pick at least one instance or property")
+	}
+	if len(ids) > maxPickedInstances {
+		return nil, nil, "", badRequest(fmt.Sprintf("too many instances (%d); pick at most %d", len(ids), maxPickedInstances))
+	}
+	nodes, err := d.nodes(ctx, branch, domain, "MATCH (n) WHERE n.entityId IN $ids RETURN n", map[string]any{"ids": ids})
+	if err != nil {
+		return nil, nil, "", err
+	}
+	byID := make(map[string]map[string]any, len(nodes))
+	for _, n := range nodes {
+		byID[str(n["entityId"])] = n
+	}
+	var ordered []map[string]any
+	var missing, skipped []string
+	for _, id := range ids {
+		n, ok := byID[id]
+		if !ok {
+			missing = append(missing, id)
+			continue
+		}
+		ordered = append(ordered, n)
+		if all[id] {
+			continue
+		}
+		for _, p := range cleanProps(want[id]) {
+			if v, has := n[p]; !has || !isTVQ(v) {
+				skipped = append(skipped, id+" "+p)
+			}
+		}
+	}
+	propsOf := func(n map[string]any) []string {
+		id := str(n["entityId"])
+		if !all[id] {
+			return cleanProps(want[id])
+		}
+		var out []string
+		for _, p := range liveProperties([]map[string]any{n}) {
+			out = append(out, p.Name)
+		}
+		return out
+	}
+	targets, labels := historyTargets(ordered, propsOf, false)
+
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, "Not found in "+branch+"/"+domain+": "+strings.Join(missing, ", ")+".")
+	}
+	if len(skipped) > 0 {
+		parts = append(parts, "No live value: "+strings.Join(skipped, ", ")+".")
+	}
+	notice := strings.Join(parts, " ")
+	if len(targets) == 0 {
+		if notice == "" {
+			notice = "The selected instances have no live values."
+		}
+		return nil, nil, "", badRequest(notice)
+	}
+	return targets, labels, notice, nil
+}
+
 // historyTargets groups instances by type for each property they hold as a
 // live value. labels maps entityId to a display name.
-func historyTargets(nodes []map[string]any, props []string, wholeType bool) ([]historyTarget, map[string]string) {
+func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []string, wholeType bool) ([]historyTarget, map[string]string) {
 	labels := map[string]string{}
 	byKey := map[string]*historyTarget{}
 	var order []string
@@ -206,7 +317,7 @@ func historyTargets(nodes []map[string]any, props []string, wholeType bool) ([]h
 		if !labelPattern.MatchString(typ) {
 			continue
 		}
-		for _, p := range props {
+		for _, p := range propsOf(n) {
 			v, ok := n[p]
 			if !ok || !isTVQ(v) {
 				continue
@@ -391,7 +502,7 @@ func cleanProps(in []string) []string {
 	return out
 }
 
-// PropertyOption is one live (time-series) property, for the editor's picker.
+// PropertyOption is one live (time-series) property: its value kind and how many nodes have it.
 type PropertyOption struct {
 	Name  string `json:"name"`
 	Kind  string `json:"kind"` // number, text, boolean or unknown (no current value)

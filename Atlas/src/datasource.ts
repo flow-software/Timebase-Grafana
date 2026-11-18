@@ -6,8 +6,8 @@ import {
   AtlasOptions,
   AtlasQuery,
   DEFAULT_QUERY,
+  HistoryPick,
   InstanceOption,
-  PropertyOption,
   RelationshipColor,
   TreeNodeData,
   TypeOption,
@@ -52,6 +52,10 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
       entityType: r(query.entityType),
     };
 
+    if (query.selection?.length) {
+      out.selection = query.selection.flatMap((p) => this.expandPick(p, scopedVars));
+    }
+
     if (query.queryType === 'cypher' && query.cypher) {
       const params: Record<string, unknown> = {};
       for (const name of cypherParameterNames(query.cypher)) {
@@ -81,7 +85,8 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         return query.scope === 'type' ? !!query.entityType : !!query.instanceId;
       case 'history':
         return (
-          (query.properties?.length ?? 0) > 0 && (query.scope === 'type' ? !!query.entityType : !!query.instanceId)
+          (query.selection?.length ?? 0) > 0 ||
+          ((query.properties?.length ?? 0) > 0 && (query.scope === 'type' ? !!query.entityType : !!query.instanceId))
         );
       case 'cypher':
         return !!query.cypher?.trim();
@@ -123,21 +128,27 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     });
   }
 
-  /** Live properties of an instance, nested instances or a type, for History. */
-  getProperties(
-    branch: string,
-    domain: string,
-    scope: string,
-    instance?: string,
-    type?: string
-  ): Promise<PropertyOption[]> {
-    return this.getResource<PropertyOption[]>('properties', {
-      branch: this.expand(branch),
-      domain: this.expand(domain),
-      scope,
-      instance: this.expand(instance ?? ''),
-      type: this.expand(type ?? ''),
+  /**
+   * Expands the variables in a pick's instance. When the first variable has
+   * several values, the pick becomes one pick per value, with the text around
+   * it kept: "$machine-Production" with CNC01 and CNC02 gives
+   * CNC01-Production and CNC02-Production.
+   */
+  private expandPick(p: HistoryPick, scopedVars: ScopedVars): HistoryPick[] {
+    const srv = this.templateSrv;
+    const m = /^(.*?)(\$\{[^}]+\}|\$[A-Za-z0-9_]+|\[\[[A-Za-z0-9_]+\]\])(.*)$/.exec(p.instance);
+    if (!m || !srv.containsTemplate(m[2])) {
+      return [{ ...p, instance: srv.replace(p.instance, scopedVars) }];
+    }
+    const [, before, token, after] = m;
+    let values: string[] = [];
+    srv.replace(token, scopedVars, (v: string | string[]) => {
+      values = Array.isArray(v) ? v : [v];
+      return '';
     });
+    const head = srv.replace(before, scopedVars);
+    const tail = srv.replace(after, scopedVars);
+    return values.map((v) => ({ ...p, instance: head + v + tail }));
   }
 
   private expand(s: string): string {
