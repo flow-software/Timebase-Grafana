@@ -567,6 +567,37 @@ func TestHistorySelectionMixesWholeInstancesAndProperties(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordProperty(t *testing.T) {
+	machine := `{"entityId":"CNC01","typeId":"urn:x:CNCMachine","LiveOpenWorkOrders":{"Timestamp":"2026-11-09T10:10:58.59Z","MxStatus":"OPEN","MxWoId":128036323}}`
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + machine + `]]}`,
+		"v AS value":       `{"columns":["id","t","value"],"data":[["CNC01","2026-11-06T11:37:19Z",{"Timestamp":"2026-11-06T11:37:19Z","MxStatus":"DONE"}],["CNC01","2026-11-09T10:10:58.59Z",{"Timestamp":"2026-11-09T10:10:58.59Z","MxStatus":"OPEN","MxWoId":128036323}]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	r := runRange(t, ds, `{"queryType":"history","selection":[{"instance":"CNC01"}]}`, to.Add(-30*24*time.Hour), to)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	cy := f.queries[len(f.queries)-1]["cypher"].(string)
+	if !strings.Contains(cy, "MATCH (n:CNCMachine)") || strings.Contains(cy, "relative(") {
+		t.Fatalf("a record is read raw with a typed MATCH: %s", cy)
+	}
+	fr := r.Frames[0]
+	if fr.Name != "CNC01 LiveOpenWorkOrders" || fr.Rows() != 2 || len(fr.Fields) != 3 {
+		t.Fatalf("frame %s rows %d fields %d", fr.Name, fr.Rows(), len(fr.Fields))
+	}
+	if fr.Fields[1].Name != "MxStatus" || fr.Fields[2].Name != "MxWoId" {
+		t.Fatalf("fields %s %s", fr.Fields[1].Name, fr.Fields[2].Name)
+	}
+	if v, ok := fr.Fields[2].ConcreteAt(0); ok {
+		t.Fatalf("a part missing from a row must be empty, got %v", v)
+	}
+	if got := liveProperties([]map[string]any{mustNode(machine)}); len(got) != 1 || got[0].Kind != "record" {
+		t.Fatalf("live = %+v", got)
+	}
+}
+
 func TestTreeCarriesLiveProperties(t *testing.T) {
 	nodes := liveProperties([]map[string]any{mustNode(prodNode)})
 	if len(nodes) != 2 || nodes[0].Name != "FeedRate" || nodes[0].Kind != "number" || nodes[1].Kind != "text" {

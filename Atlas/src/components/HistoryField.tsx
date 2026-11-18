@@ -62,7 +62,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
   const shown = all ? value : value.slice(0, MAX_CHIPS);
 
   return (
-    <Stack direction="column" gap={0.5}>
+    <div className={styles.field}>
       <Stack gap={0.5} alignItems="center" wrap="wrap">
         <Button
           variant="secondary"
@@ -122,7 +122,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
         onRefresh={() => load(true)}
         onDismiss={() => setOpen(false)}
       />
-    </Stack>
+    </div>
   );
 }
 
@@ -144,6 +144,7 @@ function chipTitle(p: HistoryPick): string {
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
+  field: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(0.5), minWidth: 0, flex: 1 }),
   chips: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(0.5), alignItems: 'center' }),
   chip: css({
     display: 'inline-flex',

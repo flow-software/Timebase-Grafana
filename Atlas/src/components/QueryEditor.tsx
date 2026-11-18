@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { css } from '@emotion/css';
 import { DataFrame, QueryEditorProps, SelectableValue } from '@grafana/data';
 import {
   Alert,
@@ -202,6 +203,8 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
         <>
           <Stack wrap="wrap" gap={1}>
             <InlineField
+              grow
+              className={css({ minWidth: 0, flex: '1 1 0', '& > *:last-child': { minWidth: 0, flex: '1 1 0' } })}
               label="Series"
               labelWidth={LABEL_WIDTH}
               tooltip="Instances (every live value) or single properties. Each instance and property becomes one series."
