@@ -1,4 +1,4 @@
-import { cypherParameterNames, cypherString, historyCypher, toCypher } from './cypher';
+import { cypherParameterNames, cypherString, historyCypher, toCypher, valuesCypher } from './cypher';
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -134,5 +134,49 @@ describe('historyCypher', () => {
         nodes
       ).error
     ).toContain('no number values');
+  });
+});
+
+describe('nested and type picks', () => {
+  const nodes = [
+    { id: 'CNC01', type: 'CNCMachine' },
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      parentId: 'CNC01',
+      live: [{ name: 'FeedRate', kind: 'number' as const }],
+    },
+    { id: 'CNC02', type: 'CNCMachine' },
+    {
+      id: 'CNC02-Production',
+      type: 'CNCProduction',
+      parentId: 'CNC02',
+      live: [{ name: 'FeedRate', kind: 'number' as const }],
+    },
+  ];
+
+  it('expands a type pick for Trend', () => {
+    const { cypher } = historyCypher(
+      {
+        refId: 'A',
+        queryType: 'history',
+        selection: [{ instance: '', type: 'CNCProduction', property: 'FeedRate', scope: 'type' }],
+      },
+      nodes
+    );
+    expect(cypher).toContain('WHERE n.entityId IN ["CNC01-Production", "CNC02-Production"]');
+  });
+
+  it('reads a whole type with a typed MATCH for Current, and a nested pick by ids', () => {
+    expect(
+      valuesCypher(
+        { refId: 'A', queryType: 'values', selection: [{ instance: '', type: 'CNCMachine', scope: 'type' }] },
+        nodes
+      ).cypher
+    ).toBe('MATCH (n:CNCMachine)\nRETURN n');
+    expect(
+      valuesCypher({ refId: 'A', queryType: 'values', selection: [{ instance: 'CNC01', scope: 'nested' }] }, nodes)
+        .cypher
+    ).toContain('IN ["CNC01", "CNC01-Production"]');
   });
 });

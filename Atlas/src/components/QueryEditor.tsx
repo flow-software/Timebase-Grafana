@@ -16,13 +16,14 @@ import {
 import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
-import { historyCypher, toCypher } from '../cypher';
+import { historyCypher, toCypher, valuesCypher } from '../cypher';
 import {
   AtlasOptions,
   AtlasQuery,
   AtlasQueryType,
   Aggregation,
   ColorBy,
+  HistoryPick,
   CypherFormat,
   LineColorBy,
   RelationshipColor,
@@ -111,11 +112,11 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       description: w.instanceCount !== undefined ? `${w.instanceCount} instances` : undefined,
     }));
   const asCypher = queryType === 'cypher' ? undefined : toCypher(query);
-  // History selections need the browse tree for types and properties, so they are converted on click.
-  const historySelection = queryType === 'history' && hasSelection;
+  // Data selections need the browse tree (types, properties, nested and type picks), so they are converted on click.
+  const dataSelection = tab === 'data' && hasSelection;
   const [cypherError, setCypherError] = useState<string>();
   const editAsCypher = () => {
-    if (!historySelection) {
+    if (!dataSelection) {
       if (asCypher) {
         update({ queryType: 'cypher', cypher: asCypher, format: 'auto' });
       }
@@ -125,16 +126,17 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
     datasource
       .getTree(branch, domain)
       .then((nodes) => {
-        const r = historyCypher(query, nodes);
+        const trend = queryType === 'history';
+        const r = trend ? historyCypher(query, nodes) : valuesCypher(query, nodes);
         if (r.cypher) {
-          update({ queryType: 'cypher', cypher: r.cypher, format: 'timeseries' });
+          update({ queryType: 'cypher', cypher: r.cypher, format: trend ? 'timeseries' : 'auto' });
         } else {
           setCypherError(r.error);
         }
       })
       .catch((e) => setCypherError(messageOf(e)));
   };
-  const canCypher = historySelection || !!asCypher;
+  const canCypher = dataSelection || !!asCypher;
 
   return (
     <Stack direction="column" gap={1}>
@@ -234,11 +236,6 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
               />
             </InlineField>
           </Stack>
-          {!hasSelection && legacyNote(query) && (
-            <Alert severity="info" title="Saved with the older options">
-              {legacyNote(query)} It still runs; selecting instances or properties replaces it.
-            </Alert>
-          )}
           {queryType === 'history' ? (
             <HistoryOptions query={query} onChange={update} />
           ) : (
@@ -498,8 +495,35 @@ export function upgrade(q: AtlasQuery): AtlasQuery {
   if (q.queryType === 'instances') {
     return { ...q, queryType: 'values', scope: 'type', layout: q.layout ?? 'columns' };
   }
-  if (q.queryType === 'values' && !q.selection?.length && (q.scope ?? 'instance') === 'instance' && q.instanceId) {
-    return { ...q, selection: [{ instance: q.instanceId }], layout: q.layout ?? 'rows' };
+  if (q.queryType === 'values' && !q.selection?.length) {
+    const scope = q.scope ?? 'instance';
+    if (scope === 'type' && q.entityType) {
+      return { ...q, selection: [{ instance: '', type: q.entityType, scope: 'type' }], layout: q.layout ?? 'columns' };
+    }
+    if (q.instanceId) {
+      const pick: HistoryPick =
+        scope === 'children' ? { instance: q.instanceId, scope: 'nested' } : { instance: q.instanceId };
+      return { ...q, selection: [pick], layout: q.layout ?? 'rows' };
+    }
+  }
+  if (q.queryType === 'history' && !q.selection?.length && q.properties?.length) {
+    const scope = q.scope ?? 'instance';
+    if (scope === 'type' && q.entityType) {
+      const type = q.entityType;
+      return {
+        ...q,
+        selection: q.properties.map((property) => ({ instance: '', type, property, scope: 'type' as const })),
+        properties: undefined,
+      };
+    }
+    if (scope === 'children' && q.instanceId) {
+      const instance = q.instanceId;
+      return {
+        ...q,
+        selection: q.properties.map((property) => ({ instance, property, scope: 'nested' as const })),
+        properties: undefined,
+      };
+    }
   }
   if (
     q.queryType === 'history' &&
@@ -552,24 +576,6 @@ function noCypherReason(queryType: string): string {
     default:
       return 'Select instances or properties first ($variables cannot be written into Cypher)';
   }
-}
-
-/** What a Data query saved before the shared selection reads, or undefined. */
-function legacyNote(q: AtlasQuery): string | undefined {
-  const scope = q.scope ?? 'instance';
-  const what =
-    scope === 'type'
-      ? `every ${q.entityType}`
-      : scope === 'children'
-        ? `${q.instanceId} and what is nested under it`
-        : '';
-  if (q.queryType === 'history' && (q.properties?.length ?? 0) > 0 && what) {
-    return `This query reads ${(q.properties ?? []).join(', ')} of ${what}.`;
-  }
-  if (q.queryType === 'values' && what && (scope === 'type' ? q.entityType : q.instanceId)) {
-    return `This query reads the current values of ${what}.`;
-  }
-  return undefined;
 }
 
 function unique(list: string[]): string[] {

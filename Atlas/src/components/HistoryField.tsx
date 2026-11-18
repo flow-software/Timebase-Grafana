@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { css } from '@emotion/css';
-import { GrafanaTheme2 } from '@grafana/data';
-import { Button, IconButton, Input, Stack, useStyles2 } from '@grafana/ui';
+import { colorManipulator, GrafanaTheme2 } from '@grafana/data';
+import { Button, Icon, IconButton, Input, Stack, useStyles2 } from '@grafana/ui';
 
 import { DataSource } from '../datasource';
 import { HistoryPick, TreeNodeData } from '../types';
 import { HistoryBrowser } from './HistoryBrowser';
+import { timebase } from './timebase';
 
 interface Props {
   datasource: DataSource;
@@ -19,9 +20,11 @@ interface Props {
 const MAX_CHIPS = 12;
 
 /**
- * The History selection: chips for what is picked, a Select button that
- * opens the tree with properties, and a box for ids and $variables that are
- * not in the tree ("$machine-Production" or "$machine-Production/FeedRate").
+ * The Data selection: chips for what is picked, a Select button that opens
+ * the tree with properties, and a box for ids and $variables that are not in
+ * the tree ("$machine-Production", "$machine-Production/FeedRate",
+ * "type:CNCProduction/FeedRate"). A whole-instance chip can be switched to
+ * include everything nested under it.
  */
 export function HistoryField({ datasource, branch, domain, value, onChange }: Props) {
   const styles = useStyles2(getStyles);
@@ -52,7 +55,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
 
   const add = () => {
     const pick = parsePick(text);
-    if (pick && !value.some((p) => p.instance === pick.instance && p.property === pick.property)) {
+    if (pick && !value.some((p) => samePick(p, pick))) {
       onChange([...value, pick]);
     }
     setText('');
@@ -74,9 +77,9 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
           {value.length ? 'Change selection' : 'Select instances and properties'}
         </Button>
         <Input
-          width={34}
+          width={40}
           value={text}
-          placeholder="or type an id or $variable[/Property]"
+          placeholder="or type an id, $variable or type:Name"
           onChange={(e) => setText(e.currentTarget.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
           onBlur={() => text.trim() && add()}
@@ -90,9 +93,41 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
       {value.length > 0 && (
         <div className={styles.chips}>
           {shown.map((p, i) => (
-            <span key={`${p.instance}/${p.property ?? ''}`} className={styles.chip} title={chipTitle(p)}>
-              <span className={styles.instance}>{p.instance}</span>
+            <span
+              key={`${p.scope ?? ''}:${p.instance}:${p.type ?? ''}/${p.property ?? ''}`}
+              className={styles.chip}
+              title={chipTitle(p)}
+            >
+              {p.scope === 'type' ? (
+                <>
+                  <Icon name="layer-group" size="xs" className={styles.scopeIcon} />
+                  <span className={styles.instance}>every {p.type}</span>
+                </>
+              ) : (
+                <>
+                  {p.scope === 'nested' && <Icon name="sitemap" size="xs" className={styles.scopeIcon} />}
+                  <span className={styles.instance}>{p.instance}</span>
+                  {p.scope === 'nested' && <span className={styles.prop}>+ nested</span>}
+                </>
+              )}
               <span className={styles.prop}>{p.property ?? 'all live values'}</span>
+              {p.scope !== 'type' && (
+                <IconButton
+                  name="sitemap"
+                  size="xs"
+                  className={p.scope === 'nested' ? styles.on : undefined}
+                  tooltip={
+                    p.scope === 'nested'
+                      ? 'Includes everything nested under it. Click for this instance only.'
+                      : 'Click to include everything nested under it, also instances added later'
+                  }
+                  onClick={() =>
+                    onChange(
+                      value.map((q, j) => (j === i ? { ...q, scope: q.scope === 'nested' ? undefined : 'nested' } : q))
+                    )
+                  }
+                />
+              )}
               <IconButton
                 name="times"
                 size="xs"
@@ -126,42 +161,73 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
   );
 }
 
-/** "id" or "id/Property"; the part after the last "/" is a property only when it is a plain name. */
+/**
+ * "id", "id/Property", "type:Name" or "type:Name/Property"; the part after
+ * the last "/" is a property only when it is a plain name.
+ */
 export function parsePick(text: string): HistoryPick | undefined {
-  const t = text.trim();
+  let t = text.trim();
+  const isType = /^type:/i.test(t);
+  if (isType) {
+    t = t.slice(5).trim();
+  }
   if (!t) {
     return undefined;
   }
+  let property: string | undefined;
   const i = t.lastIndexOf('/');
   if (i > 0 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.slice(i + 1))) {
-    return { instance: t.slice(0, i), property: t.slice(i + 1) };
+    property = t.slice(i + 1);
+    t = t.slice(0, i);
   }
-  return { instance: t };
+  const pick: HistoryPick = isType ? { instance: '', type: t, scope: 'type' } : { instance: t };
+  return property ? { ...pick, property } : pick;
+}
+
+function samePick(a: HistoryPick, b: HistoryPick): boolean {
+  return (
+    a.instance === b.instance &&
+    a.property === b.property &&
+    (a.scope ?? '') === (b.scope ?? '') &&
+    (a.scope !== 'type' || a.type === b.type)
+  );
 }
 
 function chipTitle(p: HistoryPick): string {
-  return p.property ? `${p.instance} ${p.property}` : `${p.instance}: every live value`;
+  const what = p.property ?? 'every live value';
+  if (p.scope === 'type') {
+    return `Every ${p.type} (including instances added later): ${what}`;
+  }
+  if (p.scope === 'nested') {
+    return `${p.instance} and everything nested under it (including instances added later): ${what}`;
+  }
+  return `${p.instance}: ${what}`;
 }
 
-const getStyles = (theme: GrafanaTheme2) => ({
-  field: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(0.5), minWidth: 0, flex: 1 }),
-  chips: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(0.5), alignItems: 'center' }),
-  chip: css({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: theme.spacing(0.5),
-    padding: theme.spacing(0.25, 0.5, 0.25, 1),
-    borderRadius: theme.shape.radius.pill,
-    background: theme.colors.background.secondary,
-    border: `1px solid ${theme.colors.border.weak}`,
-    fontSize: theme.typography.bodySmall.fontSize,
-    maxWidth: 360,
-  }),
-  instance: css({
-    fontWeight: theme.typography.fontWeightMedium,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  }),
-  prop: css({ color: theme.colors.text.secondary, whiteSpace: 'nowrap' }),
-});
+const getStyles = (theme: GrafanaTheme2) => {
+  const tb = timebase(theme);
+  return {
+    field: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(0.5), minWidth: 0, flex: 1 }),
+    chips: css({ display: 'flex', flexWrap: 'wrap', gap: theme.spacing(0.5), alignItems: 'center' }),
+    chip: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: theme.spacing(0.5),
+      padding: theme.spacing(0.25, 0.5, 0.25, 1),
+      borderRadius: theme.shape.radius.pill,
+      background: colorManipulator.alpha(tb.blue, 0.1),
+      border: `1px solid ${colorManipulator.alpha(tb.blue, 0.45)}`,
+      fontSize: theme.typography.bodySmall.fontSize,
+      maxWidth: 420,
+    }),
+    scopeIcon: css({ color: tb.text, flexShrink: 0 }),
+    on: css({ color: tb.text }),
+    instance: css({
+      fontWeight: theme.typography.fontWeightMedium,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }),
+    prop: css({ color: theme.colors.text.secondary, whiteSpace: 'nowrap' }),
+  };
+};

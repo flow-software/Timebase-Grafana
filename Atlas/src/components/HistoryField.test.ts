@@ -23,14 +23,33 @@ describe('upgrade', () => {
     expect(q.properties).toBeUndefined();
   });
 
-  it('leaves History of a type as saved', () => {
-    const q = upgrade({ refId: 'A', queryType: 'history', scope: 'type', entityType: 'T', properties: ['A'] });
-    expect(q.selection).toBeUndefined();
-    expect(q.properties).toEqual(['A']);
+  it('turns older History of a type or a nested branch into type and nested picks', () => {
+    const t = upgrade({ refId: 'A', queryType: 'history', scope: 'type', entityType: 'T', properties: ['A'] });
+    expect(t.selection).toEqual([{ instance: '', type: 'T', property: 'A', scope: 'type' }]);
+    expect(t.properties).toBeUndefined();
+    const n = upgrade({ refId: 'A', queryType: 'history', scope: 'children', instanceId: 'X', properties: ['A'] });
+    expect(n.selection).toEqual([{ instance: 'X', property: 'A', scope: 'nested' }]);
   });
 
-  it('turns older Values of one instance into a selection, but leaves a type as saved', () => {
+  it('turns older Values into a selection', () => {
     expect(upgrade({ refId: 'A', queryType: 'values', instanceId: 'X' }).selection).toEqual([{ instance: 'X' }]);
-    expect(upgrade({ refId: 'A', queryType: 'values', scope: 'type', entityType: 'T' }).selection).toBeUndefined();
+    expect(upgrade({ refId: 'A', queryType: 'values', scope: 'children', instanceId: '$m' }).selection).toEqual([
+      { instance: '$m', scope: 'nested' },
+    ]);
+    const t = upgrade({ refId: 'A', queryType: 'values', scope: 'type', entityType: 'T' });
+    expect(t.selection).toEqual([{ instance: '', type: 'T', scope: 'type' }]);
+    expect(t.layout).toBe('columns');
+  });
+});
+
+describe('parsePick', () => {
+  it('reads type picks', () => {
+    expect(parsePick('type:CNCProduction/FeedRate')).toEqual({
+      instance: '',
+      type: 'CNCProduction',
+      scope: 'type',
+      property: 'FeedRate',
+    });
+    expect(parsePick('type:CNCMachine')).toEqual({ instance: '', type: 'CNCMachine', scope: 'type' });
   });
 });

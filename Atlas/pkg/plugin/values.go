@@ -297,9 +297,13 @@ func jsonText(v any) string {
 // property; a property pick shows only that property (a record expands into
 // its parts). Instances keep the order they were picked in.
 func (d *Datasource) selectionValues(ctx context.Context, branch, domain string, qm queryModel) (data.Frames, error) {
+	picks, err := d.expandPicks(ctx, branch, domain, qm.Selection)
+	if err != nil {
+		return nil, err
+	}
 	var ids []string
 	props := map[string]map[string]bool{} // nil set: the whole instance
-	for _, p := range qm.Selection {
+	for _, p := range picks {
 		id := strings.TrimSpace(p.Instance)
 		if id == "" {
 			continue
@@ -319,10 +323,10 @@ func (d *Datasource) selectionValues(ctx context.Context, branch, domain string,
 		}
 	}
 	if len(ids) == 0 {
-		return nil, badRequest("pick at least one instance or property")
+		return nil, badRequest("nothing to read: no instance matches the selection")
 	}
 	if len(ids) > maxPickedInstances {
-		return nil, badRequest(fmt.Sprintf("pick at most %d instances", maxPickedInstances))
+		return nil, badRequest(fmt.Sprintf("too many instances (%d); pick at most %d", len(ids), maxPickedInstances))
 	}
 	found, err := d.nodes(ctx, branch, domain, "MATCH (n) WHERE n.entityId IN $ids RETURN n", map[string]any{"ids": ids})
 	if err != nil {

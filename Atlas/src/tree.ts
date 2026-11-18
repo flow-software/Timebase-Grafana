@@ -1,4 +1,4 @@
-import { LiveProperty, TreeNodeData } from './types';
+import { HistoryPick, LiveProperty, TreeNodeData } from './types';
 
 export interface TreeItem {
   node: TreeNodeData;
@@ -116,4 +116,94 @@ export function liveDescendants(item: PickItem): string[] {
   };
   walk(item);
   return out;
+}
+
+/** Ids of an instance and everything nested under it, parent first, in list order. */
+export function subtreeIds(nodes: TreeNodeData[], id: string): string[] {
+  const kids = new Map<string, string[]>();
+  for (const n of nodes) {
+    if (n.parentId) {
+      kids.set(n.parentId, [...(kids.get(n.parentId) ?? []), n.id]);
+    }
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const walk = (i: string) => {
+    if (seen.has(i)) {
+      return;
+    }
+    seen.add(i);
+    out.push(i);
+    (kids.get(i) ?? []).forEach(walk);
+  };
+  walk(id);
+  return out;
+}
+
+/** The short type name, e.g. CNCProduction for urn:atlas:ontology:x:CNCProduction. */
+export function shortType(t: string): string {
+  return t.slice(Math.max(t.lastIndexOf(':'), t.lastIndexOf('/'), t.lastIndexOf('#')) + 1);
+}
+
+/**
+ * Resolves nested and type picks into plain instance picks with the tree, as
+ * the backend does at query time. With a property, only instances that have
+ * it as a live value are kept.
+ */
+export function expandSelection(picks: HistoryPick[], nodes: TreeNodeData[]): HistoryPick[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const has = (id: string, prop: string) => (byId.get(id)?.live ?? []).some((l) => l.name === prop);
+  const out: HistoryPick[] = [];
+  for (const p of picks) {
+    let ids: string[];
+    if (p.scope === 'nested' && byId.has(p.instance)) {
+      ids = subtreeIds(nodes, p.instance);
+    } else if (p.scope === 'type' && p.type) {
+      const t = shortType(p.type);
+      ids = nodes.filter((n) => n.type === t).map((n) => n.id);
+    } else {
+      out.push(p.scope === 'type' ? p : { instance: p.instance, property: p.property, type: p.type });
+      continue;
+    }
+    for (const id of ids) {
+      if (!p.property || has(id, p.property)) {
+        out.push({ instance: id, property: p.property, type: byId.get(id)?.type });
+      }
+    }
+  }
+  return out;
+}
+
+/** One entity type for the Types view: its instances and the live properties they have. */
+export interface TypeGroup {
+  type: string;
+  ids: string[];
+  /** Live properties of its instances, with how many instances have each. */
+  props: Array<LiveProperty & { count: number }>;
+}
+
+export function typeGroups(nodes: TreeNodeData[], text: string): TypeGroup[] {
+  const q = text.trim().toLowerCase();
+  const groups = new Map<string, { ids: string[]; props: Map<string, LiveProperty & { count: number }> }>();
+  for (const n of nodes) {
+    const g = groups.get(n.type) ?? { ids: [] as string[], props: new Map<string, LiveProperty & { count: number }>() };
+    g.ids.push(n.id);
+    for (const l of n.live ?? []) {
+      const cur = g.props.get(l.name);
+      g.props.set(l.name, { ...l, count: (cur?.count ?? 0) + 1 });
+    }
+    groups.set(n.type, g);
+  }
+  const out: TypeGroup[] = [];
+  for (const [type, g] of groups) {
+    let props = Array.from(g.props.values()).sort((a, b) => a.name.localeCompare(b.name));
+    if (q && !type.toLowerCase().includes(q)) {
+      props = props.filter((p) => p.name.toLowerCase().includes(q));
+      if (props.length === 0) {
+        continue;
+      }
+    }
+    out.push({ type, ids: g.ids, props });
+  }
+  return out.sort((a, b) => a.type.localeCompare(b.type));
 }

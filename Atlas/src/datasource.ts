@@ -138,7 +138,7 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     const srv = this.templateSrv;
     const m = /^(.*?)(\$\{[^}]+\}|\$[A-Za-z0-9_]+|\[\[[A-Za-z0-9_]+\]\])(.*)$/.exec(p.instance);
     if (!m || !srv.containsTemplate(m[2])) {
-      return [{ ...p, instance: srv.replace(p.instance, scopedVars) }];
+      return [{ ...p, instance: srv.replace(p.instance, scopedVars), type: p.type && srv.replace(p.type, scopedVars) }];
     }
     const [, before, token, after] = m;
     let values: string[] = [];

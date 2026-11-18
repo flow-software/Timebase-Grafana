@@ -80,6 +80,81 @@ type historyTarget struct {
 type historyPick struct {
 	Instance string `json:"instance"`
 	Property string `json:"property,omitempty"`
+	// Type: the instance's entity type (informational), or for scope "type"
+	// the type whose instances are read.
+	Type string `json:"type,omitempty"`
+	// Scope: "" just this instance; "nested" this instance and everything
+	// nested under it; "type" every instance of Type. Nested and type picks
+	// are resolved when the query runs, so they follow changes in Atlas.
+	Scope string `json:"scope,omitempty"`
+}
+
+const (
+	pickNested = "nested"
+	pickType   = "type"
+)
+
+// expandPicks resolves nested and type picks into plain instance picks, in
+// tree order, using the cached instance tree. With a property, only
+// instances that have it as a live value are kept, so a scope does not
+// report every instance that lacks it.
+func (d *Datasource) expandPicks(ctx context.Context, branch, domain string, picks []historyPick) ([]historyPick, error) {
+	dynamic := false
+	for _, p := range picks {
+		if p.Scope == pickNested || p.Scope == pickType {
+			dynamic = true
+			break
+		}
+	}
+	if !dynamic {
+		return picks, nil
+	}
+	tree, err := d.trees.get(branch+"/"+domain, false, func() ([]TreeNode, error) { return d.instanceTree(ctx, branch, domain) })
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]TreeNode, len(tree))
+	for _, n := range tree {
+		byID[n.ID] = n
+	}
+	hasLive := func(id, prop string) bool {
+		for _, l := range byID[id].Live {
+			if l.Name == prop {
+				return true
+			}
+		}
+		return false
+	}
+	var out []historyPick
+	for _, p := range picks {
+		var ids []string
+		switch p.Scope {
+		case pickNested:
+			id := strings.TrimSpace(p.Instance)
+			if _, ok := byID[id]; !ok {
+				out = append(out, historyPick{Instance: id, Property: p.Property}) // reported as not found
+				continue
+			}
+			ids = descendants(tree, id)
+		case pickType:
+			typ := shortName(strings.TrimSpace(p.Type))
+			for _, n := range tree {
+				if n.Type == typ {
+					ids = append(ids, n.ID)
+				}
+			}
+		default:
+			out = append(out, p)
+			continue
+		}
+		for _, id := range ids {
+			if p.Property != "" && !hasLive(id, p.Property) {
+				continue
+			}
+			out = append(out, historyPick{Instance: id, Property: p.Property})
+		}
+	}
+	return out, nil
 }
 
 // maxPickedInstances bounds one History selection.
@@ -232,6 +307,10 @@ func (d *Datasource) scopeNodes(ctx context.Context, branch, domain string, qm q
 // targets. A pick without a property takes every live property of the
 // instance. The notice names picks that give no series.
 func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string, picks []historyPick) ([]historyTarget, map[string]string, string, error) {
+	picks, err := d.expandPicks(ctx, branch, domain, picks)
+	if err != nil {
+		return nil, nil, "", err
+	}
 	want := map[string][]string{} // instance -> named properties
 	all := map[string]bool{}      // instance picked whole
 	var ids []string
@@ -255,7 +334,7 @@ func (d *Datasource) selectionTargets(ctx context.Context, branch, domain string
 		}
 	}
 	if len(ids) == 0 {
-		return nil, nil, "", badRequest("pick at least one instance or property")
+		return nil, nil, "", badRequest("nothing to read: no instance matches the selection")
 	}
 	if len(ids) > maxPickedInstances {
 		return nil, nil, "", badRequest(fmt.Sprintf("too many instances (%d); pick at most %d", len(ids), maxPickedInstances))

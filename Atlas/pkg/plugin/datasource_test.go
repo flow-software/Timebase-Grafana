@@ -667,6 +667,44 @@ func TestHistoryEmptyCurrentTextFallsBackToRaw(t *testing.T) {
 	}
 }
 
+func TestExpandPicksNestedAndType(t *testing.T) {
+	ds := newTestDS(t, &fakeAtlas{}, noAuth)
+	live := func(names ...string) []LiveProperty {
+		var out []LiveProperty
+		for _, n := range names {
+			out = append(out, LiveProperty{Name: n, Kind: "number"})
+		}
+		return out
+	}
+	tree := []TreeNode{
+		{ID: "CNC01", Type: "CNCMachine"},
+		{ID: "CNC01-Production", Type: "CNCProduction", ParentID: "CNC01", Live: live("FeedRate")},
+		{ID: "CNC01-Spindle", Type: "MotorType", ParentID: "CNC01", Live: live("RPM")},
+		{ID: "CNC02", Type: "CNCMachine"},
+		{ID: "CNC02-Production", Type: "CNCProduction", ParentID: "CNC02", Live: live("FeedRate")},
+	}
+	if _, err := ds.trees.get("main/d", true, func() ([]TreeNode, error) { return tree, nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ds.expandPicks(context.Background(), "main", "d", []historyPick{
+		{Instance: "CNC01", Scope: "nested"},
+		{Type: "urn:x:CNCProduction", Scope: "type", Property: "FeedRate"},
+		{Instance: "CNC01", Scope: "nested", Property: "RPM"},
+		{Instance: "Plain", Property: "X"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, p := range got {
+		keys = append(keys, p.Instance+"/"+p.Property)
+	}
+	want := "CNC01/ CNC01-Production/ CNC01-Spindle/ CNC01-Production/FeedRate CNC02-Production/FeedRate CNC01-Spindle/RPM Plain/X"
+	if strings.Join(keys, " ") != want {
+		t.Fatalf("got  %s, want %s", strings.Join(keys, " "), want)
+	}
+}
+
 func TestValuesSelectionFiltersProperties(t *testing.T) {
 	other := `{"entityId":"CNC03-Production","typeId":"urn:x:CNCProduction","FeedRate":{"Timestamp":"2026-11-18T05:00:00Z","Value":3,"Quality":192},"SpindleTemp":{"Timestamp":"2026-11-18T05:00:00Z","Value":40,"Quality":192}}`
 	f := &fakeAtlas{cypher: map[string]string{
