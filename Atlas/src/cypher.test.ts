@@ -50,3 +50,27 @@ describe('cypherString', () => {
     expect(cypherString(input)).toBe('"a' + BACKSLASH + BACKSLASH + 'b' + BACKSLASH + '"c"');
   });
 });
+
+describe('toCypher history', () => {
+  it('writes a typed UNWIND with the panel time range for one property of a type', () => {
+    const c = toCypher({
+      refId: 'A',
+      queryType: 'history',
+      scope: 'type',
+      entityType: 'CNCProduction',
+      properties: ['FeedRate'],
+    });
+    expect(c).toContain('MATCH (n:CNCProduction)');
+    expect(c).toContain('UNWIND n.FeedRate AS v');
+    expect(c).toContain('datetime($from)');
+  });
+
+  it('has no single query for instances or several properties', () => {
+    expect(
+      toCypher({ refId: 'A', queryType: 'history', scope: 'instance', instanceId: 'x', properties: ['A'] })
+    ).toBeUndefined();
+    expect(
+      toCypher({ refId: 'A', queryType: 'history', scope: 'type', entityType: 'T', properties: ['A', 'B'] })
+    ).toBeUndefined();
+  });
+});

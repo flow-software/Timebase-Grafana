@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+- History query: stored values of live properties over the panel time range, for one instance, nested instances or a whole type. Raw points or minute / hour / day averages (Auto picks from the range), optional min/max and quality. Series are labelled `instance` and `property` and work in alert rules.
+- Cypher: `$from` and `$to` are filled from the panel time range; ISO timestamp columns become time fields, so Cypher history queries work in time series panels.
+- Demo dashboard: History panels.
+
 ## 0.1.0 (2026-11-16)
 
 First version of the Timebase Atlas data source.
@@ -14,4 +20,4 @@ First version of the Timebase Atlas data source.
 - Browse modal for instances (nested by containment, as in Atlas) and entity types.
 - "Edit as Cypher" turns a builder query into the matching Cypher query.
 - Dashboard variables from any query; the first column becomes the values.
-- Uses the Atlas /api/v1 REST API only. No history yet (see flow-software/Timebase#2394).
+- Uses the Atlas /api/v1 REST API only.

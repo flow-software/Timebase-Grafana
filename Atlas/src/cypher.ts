@@ -65,7 +65,20 @@ export function toCypher(q: AtlasQuery): string | undefined {
       const limit = q.limit && q.limit > 0 ? q.limit : 1000;
       return `MATCH (n:${q.entityType})\nRETURN n\nLIMIT ${limit}`;
     }
+    case 'history': {
+      const prop = q.properties?.length === 1 ? q.properties[0] : undefined;
+      if (q.scope !== 'type' || !prop || !q.entityType || !IDENT.test(q.entityType) || !IDENT.test(prop)) {
+        return undefined;
+      }
+      return (
+        `MATCH (n:${q.entityType})\nUNWIND n.${prop} AS v\n` +
+        `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\n` +
+        `RETURN n.entityId, relative(v.Timestamp, "h") AS t, avg(v.Value)\nORDER BY t`
+      );
+    }
     default:
       return undefined;
   }
 }
+
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;

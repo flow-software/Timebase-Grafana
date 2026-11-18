@@ -7,6 +7,7 @@ import {
   AtlasQuery,
   DEFAULT_QUERY,
   InstanceOption,
+  PropertyOption,
   RelationshipColor,
   TreeNodeData,
   TypeOption,
@@ -78,6 +79,10 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         return !!query.entityType;
       case 'values':
         return query.scope === 'type' ? !!query.entityType : !!query.instanceId;
+      case 'history':
+        return (
+          (query.properties?.length ?? 0) > 0 && (query.scope === 'type' ? !!query.entityType : !!query.instanceId)
+        );
       case 'cypher':
         return !!query.cypher?.trim();
       default:
@@ -115,6 +120,23 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     return this.getResource<RelationshipColor[]>('relationship-types', {
       branch: this.expand(branch),
       domain: this.expand(domain),
+    });
+  }
+
+  /** Live properties of an instance, nested instances or a type, for History. */
+  getProperties(
+    branch: string,
+    domain: string,
+    scope: string,
+    instance?: string,
+    type?: string
+  ): Promise<PropertyOption[]> {
+    return this.getResource<PropertyOption[]>('properties', {
+      branch: this.expand(branch),
+      domain: this.expand(domain),
+      scope,
+      instance: this.expand(instance ?? ''),
+      type: this.expand(type ?? ''),
     });
   }
 

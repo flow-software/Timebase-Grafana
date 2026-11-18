@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/flow-software/Timebase-Grafana/Atlas/pkg/atlas"
 	"github.com/flow-software/Timebase-Grafana/Atlas/pkg/auth"
@@ -104,6 +105,7 @@ const (
 	queryInstances = "instances"
 	queryValues    = "values"
 	queryCypher    = "cypher"
+	queryHistory   = "history"
 )
 
 // Output formats for Cypher queries.
@@ -128,9 +130,14 @@ type queryModel struct {
 	IncludeQuality bool `json:"includeQuality"`
 	IncludeTime    bool `json:"includeTime"`
 
-	// Values: what to read (instance, children, type) and how to lay it out.
+	// Values and History: what to read (instance, children, type); Values: how to lay it out.
 	Scope  string `json:"scope"`
 	Layout string `json:"layout"`
+
+	// History: live properties to read, and raw points or buckets.
+	Properties    []string `json:"properties"`
+	Aggregation   string   `json:"aggregation"`
+	IncludeMinMax bool     `json:"includeMinMax"`
 
 	// Graph and Cypher graph output.
 	ColorBy           string `json:"colorBy"`
@@ -187,7 +194,9 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery, dsUID, 
 	case queryValues:
 		frames, err = d.valuesQuery(ctx, branch, domain, qm)
 	case queryCypher:
-		frames, err = d.cypherQuery(ctx, branch, domain, qm)
+		frames, err = d.cypherQuery(ctx, branch, domain, qm, query.TimeRange)
+	case queryHistory:
+		frames, err = d.historyQuery(ctx, branch, domain, qm, query.TimeRange.From, query.TimeRange.To)
 	default:
 		err = badRequest(fmt.Sprintf("unsupported query type %q", qm.QueryType))
 	}
@@ -389,12 +398,12 @@ func addNodeLinks(nodes *data.Frame, branch, domain string, qm queryModel) {
 	f.Config.Links = links
 }
 
-func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm queryModel) (data.Frames, error) {
+func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm queryModel, tr backend.TimeRange) (data.Frames, error) {
 	text := strings.TrimSpace(qm.Cypher)
 	if text == "" {
 		return nil, badRequest("enter a Cypher query")
 	}
-	res, err := d.client.Query(ctx, branch, domain, text, qm.Parameters)
+	res, err := d.client.Query(ctx, branch, domain, text, withTimeRange(text, qm.Parameters, tr))
 	if err != nil {
 		return nil, err
 	}
@@ -598,6 +607,24 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 		}
 		return reply(http.StatusOK, relationshipColors(types))
 
+	case "properties":
+		// Live properties of an instance, nested instances or a type, for History.
+		if domain == "" {
+			return reply(http.StatusOK, []PropertyOption{})
+		}
+		qm := queryModel{Scope: params["scope"], InstanceID: params["instance"], EntityType: params["type"], Limit: 50}
+		if qm.Scope == "" {
+			qm.Scope = scopeInstance
+		}
+		if (qm.Scope == scopeType && qm.EntityType == "") || (qm.Scope != scopeType && qm.InstanceID == "") {
+			return reply(http.StatusOK, []PropertyOption{})
+		}
+		nodes, err := d.scopeNodes(ctx, branch, domain, qm)
+		if err != nil {
+			return fail(err)
+		}
+		return reply(http.StatusOK, liveProperties(nodes))
+
 	case "tree":
 		if domain == "" {
 			return reply(http.StatusOK, []TreeNode{})
@@ -633,4 +660,42 @@ func unescape(s string) string {
 		return v
 	}
 	return s
+}
+
+// withTimeRange fills $from and $to from the panel's time range when the
+// Cypher uses them and no dashboard variable supplied them, so hand-written
+// history queries follow the time picker.
+func withTimeRange(cypher string, params map[string]any, tr backend.TimeRange) map[string]any {
+	out := make(map[string]any, len(params)+2)
+	for k, v := range params {
+		out[k] = v
+	}
+	for name, t := range map[string]time.Time{"from": tr.From, "to": tr.To} {
+		if _, set := out[name]; set || t.IsZero() {
+			continue
+		}
+		if usesParam(cypher, name) {
+			out[name] = t.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	return out
+}
+
+// usesParam reports whether $name appears as a whole parameter name.
+func usesParam(cypher, name string) bool {
+	for i := 0; ; {
+		j := strings.Index(cypher[i:], "$"+name)
+		if j < 0 {
+			return false
+		}
+		end := i + j + 1 + len(name)
+		if end >= len(cypher) || !isIdentChar(cypher[end]) {
+			return true
+		}
+		i = end
+	}
+}
+
+func isIdentChar(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
