@@ -498,9 +498,9 @@ function relationshipTypesIn(series: DataFrame[] | undefined, refId: string): Se
 const aggregations: Array<SelectableValue<Aggregation>> = [
   { label: 'Auto', value: 'auto', description: 'Raw up to 3 hours, then minute, hour or day buckets' },
   { label: 'Raw', value: 'raw', description: 'Every stored value (capped at 200,000 per property)' },
-  { label: 'Minute', value: 'minute', description: 'Average per minute' },
-  { label: 'Hour', value: 'hour', description: 'Average per hour' },
-  { label: 'Day', value: 'day', description: 'Average per day' },
+  { label: 'Minute', value: 'minute', description: 'Average per minute, with the min/max band' },
+  { label: 'Hour', value: 'hour', description: 'Average per hour, with the min/max band' },
+  { label: 'Day', value: 'day', description: 'Average per day, with the min/max band' },
 ];
 
 function HistoryOptions({ query, onChange }: { query: AtlasQuery; onChange: (p: Partial<AtlasQuery>) => void }) {
@@ -515,9 +515,12 @@ function HistoryOptions({ query, onChange }: { query: AtlasQuery; onChange: (p: 
         <RadioButtonGroup options={aggregations} value={agg} onChange={(v) => onChange({ aggregation: v })} />
       </InlineField>
       {agg !== 'raw' && (
-        <InlineField label="Min/max" tooltip="Add min and max series next to the bucket average">
+        <InlineField
+          label="Min/max band"
+          tooltip="Shade each bucket's min to max around the average line, so short peaks are not averaged away"
+        >
           <InlineSwitch
-            value={!!query.includeMinMax}
+            value={query.includeMinMax !== false}
             onChange={(e) => onChange({ includeMinMax: e.currentTarget.checked })}
           />
         </InlineField>

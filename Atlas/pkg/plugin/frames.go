@@ -354,10 +354,93 @@ func splitSeries(f *data.Frame) (data.Frames, error) {
 		}
 		out = append(out, fr)
 	}
+	styleBands(out)
 	if len(out) == 0 {
 		fr := data.NewFrame("result")
 		addNotice(fr, data.NoticeSeverityInfo, "No values in this time range.")
 		out = data.Frames{fr}
 	}
 	return out, nil
+}
+
+// minMax reports whether bucketed history carries min and max. Unset is on.
+func (qm queryModel) minMax() bool {
+	return qm.IncludeMinMax == nil || *qm.IncludeMinMax
+}
+
+// bandPalette is Grafana's classic palette, so banded series keep the
+// colours Grafana would have picked.
+var bandPalette = []string{
+	"#73BF69", "#F2CC0C", "#8AB8FF", "#FF780A", "#F2495C", "#5794F2", "#B877D9", "#705DA0",
+	"#37872D", "#FADE2A", "#447EBC", "#C15C17", "#890F02", "#0A437C", "#6D1F62", "#584477",
+}
+
+// styleBands draws a frame's min and max fields as a shaded band around its
+// other value field (the bucket average), in the same colour, so a peak
+// inside a bucket stays visible. Min and max get no line and no legend
+// entry but stay in the tooltip. A colour is fixed per series only when a
+// band exists, so the band and its line match; panel overrides still win.
+func styleBands(frames data.Frames) {
+	type band struct{ main, lo, hi *data.Field }
+	var bands []band
+	banded := false
+	for _, f := range frames {
+		var b band
+		for _, fl := range f.Fields {
+			if fl.Type() == data.FieldTypeTime || fl.Type() == data.FieldTypeNullableTime {
+				continue
+			}
+			switch strings.ToLower(fl.Name) {
+			case "min":
+				b.lo = fl
+			case "max":
+				b.hi = fl
+			default:
+				if b.main == nil && fl.Type().Numeric() {
+					b.main = fl
+				}
+			}
+		}
+		if b.main == nil {
+			continue
+		}
+		if b.lo != nil && b.hi != nil {
+			banded = true
+		} else {
+			b.lo, b.hi = nil, nil
+		}
+		bands = append(bands, b)
+	}
+	if !banded {
+		return
+	}
+	for i, b := range bands {
+		color := map[string]any{"mode": "fixed", "fixedColor": bandPalette[i%len(bandPalette)]}
+		fieldConfig(b.main).Color = color
+		if b.lo == nil {
+			continue
+		}
+		hidden := map[string]any{"legend": true, "tooltip": false, "viz": false}
+		lo, hi := fieldConfig(b.lo), fieldConfig(b.hi)
+		lo.Color, hi.Color = color, color
+		lo.Custom = map[string]any{"lineWidth": 0, "fillOpacity": 0, "showPoints": "never", "hideFrom": hidden}
+		hi.Custom = map[string]any{
+			"lineWidth": 0, "showPoints": "never", "hideFrom": hidden,
+			"fillOpacity": 20, "fillBelowTo": displayName(b.lo),
+		}
+	}
+}
+
+func fieldConfig(f *data.Field) *data.FieldConfig {
+	if f.Config == nil {
+		f.Config = &data.FieldConfig{}
+	}
+	return f.Config
+}
+
+func displayName(f *data.Field) string {
+	if f.Config != nil && f.Config.DisplayNameFromDS != "" {
+		return f.Config.DisplayNameFromDS
+	}
+	return f.Name
 }

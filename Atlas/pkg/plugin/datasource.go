@@ -142,9 +142,11 @@ type queryModel struct {
 	Selection []historyPick `json:"selection"`
 
 	// History: live properties to read, and raw points or buckets.
-	Properties    []string `json:"properties"`
-	Aggregation   string   `json:"aggregation"`
-	IncludeMinMax bool     `json:"includeMinMax"`
+	Properties  []string `json:"properties"`
+	Aggregation string   `json:"aggregation"`
+	// IncludeMinMax adds each bucket's min and max, drawn as a band around
+	// the average. Unset means on, so peaks are not averaged away.
+	IncludeMinMax *bool `json:"includeMinMax"`
 
 	// Graph and Cypher graph output.
 	ColorBy           string `json:"colorBy"`

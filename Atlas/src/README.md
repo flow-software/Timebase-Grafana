@@ -52,7 +52,7 @@ Each instance and property becomes one series, labelled `instance` and `property
 
 Record properties (a group of fields with one timestamp, such as MaintainX `LiveAsset` or `LiveOpenWorkOrders`) are listed too. They change rarely; each stored version becomes one row with a column per field, best shown in a table or state timeline.
 
-**Aggregation**: _Auto_ reads every value for ranges up to 3 hours, then averages per minute (up to 3 days), per hour (up to 180 days) or per day. _Raw_, _Minute_, _Hour_ and _Day_ force one. Text and boolean properties are always read raw. **Min/max** adds the bucket minimum and maximum; **Quality** adds the OPC quality code of each raw value.
+**Aggregation**: _Auto_ reads every value for ranges up to 3 hours, then averages per minute (up to 3 days), per hour (up to 180 days) or per day. _Raw_, _Minute_, _Hour_ and _Day_ force one. Text and boolean properties are always read raw. Buckets are a plain average of the stored values in each bucket (not time-weighted), so a short peak shrinks in the line. **Min/max band** (on by default) shades each bucket's minimum to maximum around the line in the same colour, so peaks stay visible; the min and max show in the tooltip but not the legend. Cypher time series results with `min` and `max` columns get the same band. **Quality** adds the OPC quality code of each raw value.
 
 The first value can be from just before the range: it is the value the property held when the range starts.
 

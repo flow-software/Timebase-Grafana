@@ -155,6 +155,7 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 		}
 	}
 	sort.SliceStable(frames, func(i, j int) bool { return frames[i].Name < frames[j].Name })
+	styleBands(frames)
 	if len(frames) == 0 {
 		frames = data.Frames{data.NewFrame("history")}
 		addNotice(frames[0], data.NoticeSeverityInfo, "No values in this time range.")
@@ -451,7 +452,7 @@ func historyFrame(id, label, prop string, rows [][]any, agg string, qm queryMode
 			data.NewField("Time", nil, times),
 			data.NewField("Value", lbl, avg).SetConfig(&data.FieldConfig{DisplayNameFromDS: name}),
 		)
-		if qm.IncludeMinMax {
+		if qm.minMax() {
 			f.Fields = append(f.Fields,
 				data.NewField("Min", lbl, mins).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " min"}),
 				data.NewField("Max", lbl, maxs).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " max"}),
