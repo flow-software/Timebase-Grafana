@@ -1,4 +1,4 @@
-import { expandSelection, shortType } from './tree';
+import { expandSelection, shortType, subtreeIds } from './tree';
 import { AtlasQuery, TreeNodeData } from './types';
 
 /**
@@ -109,6 +109,65 @@ export interface CypherVars {
 
 const NO_VARS: CypherVars = { values: (t) => [t], isMulti: () => false };
 
+/** The deepest nesting in the tree, as the bound for a variable-length containment match. */
+function treeDepth(nodes: TreeNodeData[]): number {
+  const parent = new Map(nodes.map((n) => [n.id, n.parentId]));
+  let deepest = 1;
+  for (const n of nodes) {
+    let d = 0;
+    for (let cur = n.parentId; cur && d < 50; cur = parent.get(cur)) {
+      d++;
+    }
+    deepest = Math.max(deepest, d);
+  }
+  return deepest;
+}
+
+/**
+ * MATCH clauses for "everything nested under the instances of a variable",
+ * by entity type, as the tree resolves them now. Atlas has no zero-length
+ * match, so the variable's own instances get their own clause; what is
+ * nested under them is reached through containment relationships only
+ * (live-checked on Atlas 2.0: a typed variable-length match reads stored
+ * values like a match by id).
+ */
+function nestedMatches(
+  rootIds: string[],
+  expr: string,
+  nestedType: string | undefined,
+  nodes: TreeNodeData[],
+  containment: string[]
+): Array<{ match: string; type: string; members: TreeNodeData[] }> | { error: string } {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const want = nestedType ? shortType(nestedType) : undefined;
+  const self = new Map<string, TreeNodeData[]>();
+  const below = new Map<string, TreeNodeData[]>();
+  for (const r of rootIds.filter((id) => byId.has(id))) {
+    for (const id of subtreeIds(nodes, r)) {
+      const n = byId.get(id)!;
+      if (want && n.type !== want) {
+        continue;
+      }
+      const into = id === r ? self : below;
+      into.set(n.type, [...(into.get(n.type) ?? []), n]);
+    }
+  }
+  if (below.size > 0 && containment.length === 0) {
+    return {
+      error:
+        'The containment relationship types of this domain are not known, so "nested under" cannot be written as Cypher.',
+    };
+  }
+  const rels = containment.join('|');
+  const depth = treeDepth(nodes);
+  const out: Array<{ match: string; type: string; members: TreeNodeData[] }> = [];
+  self.forEach((members, type) => out.push({ type, members, match: `MATCH (n:${type}) WHERE n.entityId IN ${expr}` }));
+  below.forEach((members, type) =>
+    out.push({ type, members, match: `MATCH (m)-[:${rels}*1..${depth}]->(n:${type}) WHERE m.entityId IN ${expr}` })
+  );
+  return out;
+}
+
 /** "before$nameafter" with one variable; undefined when there is none. */
 interface VarText {
   before: string;
@@ -171,7 +230,8 @@ function idSource(instance: string, vars: CypherVars): IdSource | { error: strin
 export function valuesCypher(
   q: AtlasQuery,
   nodes: TreeNodeData[],
-  vars: CypherVars = NO_VARS
+  vars: CypherVars = NO_VARS,
+  containment: string[] = []
 ): { cypher?: string; error?: string } {
   const sel = q.selection ?? [];
   const types = new Set(sel.map((p) => (p.scope === 'type' && !p.property && p.type ? shortType(p.type) : '')));
@@ -181,15 +241,24 @@ export function valuesCypher(
   }
   const ids: string[] = [];
   const exprs: string[] = [];
+  const nested: string[] = [];
   const outside: string[] = [];
   for (const p of expandSelection(sel, nodes)) {
     if (hasVar(p.instance)) {
-      if (p.scope) {
-        return { error: `A nested or type pick with a variable cannot be written as Cypher: ${p.instance}` };
+      if (p.scope === 'type') {
+        return { error: `A type pick with a variable cannot be written as Cypher: ${p.type}` };
       }
       const src = idSource(p.instance, vars);
       if ('error' in src) {
         return src;
+      }
+      if (p.scope === 'nested') {
+        const m = nestedMatches(src.ids, src.expr!, p.nestedType, nodes, containment);
+        if ('error' in m) {
+          return m;
+        }
+        m.forEach((x) => !nested.includes(x.match) && nested.push(x.match));
+        continue;
       }
       if (!exprs.includes(src.expr!)) {
         exprs.push(src.expr!);
@@ -207,17 +276,21 @@ export function valuesCypher(
     ...(ids.length ? [`n.entityId IN [${ids.map(cypherString).join(', ')}]`] : []),
     ...exprs.map((e) => `n.entityId IN ${e}`),
   ];
-  if (conds.length === 0) {
+  if (conds.length === 0 && nested.length === 0) {
     return { error: 'No instance matches the selection.' };
   }
-  return { cypher: `MATCH (n)\nWHERE ${conds.join('\n   OR ')}\nRETURN n` };
+  const parts = [
+    ...(conds.length ? [`MATCH (n)\nWHERE ${conds.join('\n   OR ')}\nRETURN n`] : []),
+    ...nested.map((m) => `${m}\nRETURN n`),
+  ];
+  return { cypher: parts.join('\nUNION ALL\n') };
 }
 
 interface ReadGroup {
   type: string;
   prop: string;
   ids: string[];
-  expr?: string; // ids from a variable
+  match?: string; // MATCH ... WHERE for a variable pick; literal ids otherwise
   guard?: string; // "FeedRate" IN $prop, for a property from a variable
 }
 
@@ -238,14 +311,17 @@ interface ReadGroup {
 export function historyCypher(
   q: AtlasQuery,
   nodes: TreeNodeData[],
-  vars: CypherVars = NO_VARS
+  vars: CypherVars = NO_VARS,
+  containment: string[] = []
 ): { cypher?: string; error?: string } {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const groups = new Map<string, ReadGroup>();
   const missing: string[] = [];
   const left: string[] = [];
 
-  const add = (n: TreeNodeData, propText: string | undefined, expr?: string) => {
+  // match: the MATCH ... WHERE of a variable pick, whose instances (merged into n) only
+  // contribute properties they have.
+  const add = (n: TreeNodeData, propText: string | undefined, match?: string) => {
     const live = n.live ?? [];
     const pv = parseVar(propText);
     let props: string[];
@@ -261,15 +337,18 @@ export function historyCypher(
       props = propText ? [propText] : live.map((p) => p.name);
     }
     for (const prop of props) {
+      if (match && !live.some((l) => l.name === prop)) {
+        continue; // none of the variable's instances of this type has it
+      }
       const kind = live.find((p) => p.name === prop)?.kind ?? 'unknown';
       if (!PLOTTABLE.has(kind) || !IDENT.test(n.type) || !IDENT.test(prop)) {
         left.push(`${n.id} ${prop} (${kind})`);
         continue;
       }
-      const g0: ReadGroup = { type: n.type, prop, ids: [], expr, guard: guard?.(prop) };
-      const key = [n.type, prop, expr ?? '', g0.guard ?? ''].join('\u0000');
+      const g0: ReadGroup = { type: n.type, prop, ids: [], match, guard: guard?.(prop) };
+      const key = [n.type, prop, match ?? '', g0.guard ?? ''].join('\u0000');
       const g = groups.get(key) ?? g0;
-      if (!expr && !g.ids.includes(n.id)) {
+      if (!match && !g.ids.includes(n.id)) {
         g.ids.push(n.id);
       }
       groups.set(key, g);
@@ -278,12 +357,27 @@ export function historyCypher(
 
   for (const pick of expandSelection(q.selection ?? [], nodes)) {
     if (hasVar(pick.instance)) {
-      if (pick.scope) {
-        return { error: `A nested or type pick with a variable cannot be written as Cypher: ${pick.instance}` };
+      if (pick.scope === 'type') {
+        return { error: `A type pick with a variable cannot be written as Cypher: ${pick.type}` };
       }
       const src = idSource(pick.instance, vars);
       if ('error' in src) {
         return src;
+      }
+      const merge = (members: TreeNodeData[]): TreeNodeData => ({
+        ...members[0],
+        live: Array.from(new Map(members.flatMap((n) => n.live ?? []).map((l) => [l.name, l])).values()),
+      });
+      if (pick.scope === 'nested') {
+        const m = nestedMatches(src.ids, src.expr!, pick.nestedType, nodes, containment);
+        if ('error' in m) {
+          return m;
+        }
+        if (m.length === 0) {
+          missing.push(`${pick.instance} (nothing nested of that type now)`);
+        }
+        m.forEach((x) => add(merge(x.members), pick.property, x.match));
+        continue;
       }
       // The variable's current instances give the types to read.
       const found = src.ids.map((id) => byId.get(id)).filter((n): n is TreeNodeData => !!n);
@@ -293,14 +387,10 @@ export function historyCypher(
       }
       const seenType = new Map<string, TreeNodeData[]>();
       found.forEach((n) => seenType.set(n.type, [...(seenType.get(n.type) ?? []), n]));
-      for (const sameType of seenType.values()) {
+      seenType.forEach((sameType, type) =>
         // One read per property any of them has.
-        const merged: TreeNodeData = {
-          ...sameType[0],
-          live: Array.from(new Map(sameType.flatMap((n) => n.live ?? []).map((l) => [l.name, l])).values()),
-        };
-        add(merged, pick.property, src.expr);
-      }
+        add(merge(sameType), pick.property, `MATCH (n:${type}) WHERE n.entityId IN ${src.expr}`)
+      );
       continue;
     }
     const n = byId.get(pick.instance);
@@ -325,7 +415,8 @@ export function historyCypher(
     : 'v.Timestamp AS time, v.Value AS value';
   const parts = Array.from(groups.values()).map(
     (g) =>
-      `MATCH (n:${g.type}) WHERE n.entityId IN ${g.expr ?? `[${g.ids.map(cypherString).join(', ')}]`}\n` +
+      (g.match ?? `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]`) +
+      '\n' +
       `UNWIND n.${g.prop} AS v\n` +
       `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)` +
       (g.guard ? ` AND ${g.guard}` : '') +
@@ -340,10 +431,13 @@ export function historyCypher(
       ? '// $from, $to and $bucket follow the time picker; use "m", "h" or "d" instead of $bucket for fixed buckets.'
       : '// $from and $to follow the time picker.',
   ];
-  if (Array.from(groups.values()).some((g) => g.expr || g.guard)) {
+  if (Array.from(groups.values()).some((g) => g.match || g.guard)) {
     head.push(
       '// Dashboard variables stay variables. Entity types come from their current values; a property variable switches each read on or off.'
     );
+  }
+  if (Array.from(groups.values()).some((g) => g.match?.includes('*1..'))) {
+    head.push('// "Nested under" follows containment relationships only, as the instance tree does.');
   }
   if (left.length) {
     head.push(`// Left out, not numbers: ${left.join(', ')}`);

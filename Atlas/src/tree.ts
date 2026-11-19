@@ -166,7 +166,8 @@ export function expandSelection(picks: HistoryPick[], nodes: TreeNodeData[]): Hi
       const t = shortType(p.type);
       ids = nodes.filter((n) => n.type === t).map((n) => n.id);
     } else {
-      out.push(p.scope === 'type' ? p : { instance: p.instance, property: p.property, type: p.type });
+      // Not resolvable here (a $variable, or an id outside the tree): kept as it is, scope included.
+      out.push(p.scope ? p : { instance: p.instance, property: p.property, type: p.type });
       continue;
     }
     for (const id of ids) {
