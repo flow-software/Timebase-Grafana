@@ -112,7 +112,7 @@ func strings_(f *data.Field) []string {
 
 func TestGraphAroundInstance(t *testing.T) {
 	f := &fakeAtlas{cypher: map[string]string{
-		"a.entityId = $id": `{"columns":["a"],"data":[[{"entityId":"CNC02","typeId":"urn:x:CNCMachine","entityLabel":"CNC02"}]]}`,
+		"IN $ids RETURN a": `{"columns":["a"],"data":[[{"entityId":"CNC02","typeId":"urn:x:CNCMachine","entityLabel":"CNC02"}]]}`,
 		"IN $ids":          fixture(t, "graph_cnc02.json"),
 	}}
 	ds := newTestDS(t, f, noAuth)
@@ -147,7 +147,7 @@ func TestGraphAroundInstance(t *testing.T) {
 }
 
 func TestGraphUnknownInstance(t *testing.T) {
-	f := &fakeAtlas{cypher: map[string]string{"a.entityId = $id": `{"columns":["a"],"data":[]}`}}
+	f := &fakeAtlas{cypher: map[string]string{"IN $ids RETURN a": `{"columns":["a"],"data":[]}`}}
 	r := run(t, newTestDS(t, f, noAuth), `{"queryType":"graph","instanceId":"nope"}`)
 	if r.Error == nil || !strings.Contains(r.Error.Error(), `"nope" not found`) {
 		t.Fatalf("want not-found error, got %v", r.Error)
@@ -913,5 +913,23 @@ func TestCypherTimeSeriesNoRows(t *testing.T) {
 	}
 	if len(r.Frames) != 1 || r.Frames[0].Meta == nil || len(r.Frames[0].Meta.Notices) == 0 || r.Frames[0].Meta.Notices[0].Text != "The query returned no rows." {
 		t.Fatalf("frames %v", r.Frames)
+	}
+}
+
+func TestGraphAroundSeveralInstances(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN a": `{"columns":["a"],"data":[[{"entityId":"CNC01","typeId":"urn:x:CNCMachine"}],[{"entityId":"CNC02","typeId":"urn:x:CNCMachine"}]]}`,
+		"RETURN r, b":      `{"columns":["r","b"],"data":[]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	r := run(t, ds, `{"queryType":"graph","instanceId":"CNC01, CNC02"}`)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if ids := f.queries[0]["parameters"].(map[string]any)["ids"].([]any); len(ids) != 2 {
+		t.Fatalf("start ids %v", ids)
+	}
+	if r.Frames[0].Rows() != 2 {
+		t.Fatalf("want both start nodes, got %d", r.Frames[0].Rows())
 	}
 }

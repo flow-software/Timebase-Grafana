@@ -320,3 +320,15 @@ describe('record properties in Edit as Cypher', () => {
     expect(cypher).toContain('// Left out, not numbers: CNC01 LiveAsset.MxAssetName (text)');
   });
 });
+
+describe('graph start variables in Edit as Cypher', () => {
+  it('keeps the start variable as a parameter', () => {
+    const vars = { values: (t: string) => [t], isMulti: (n: string) => n === 'machines' };
+    expect(toCypher({ refId: 'A', queryType: 'graph', instanceId: '$machine' }, vars)).toContain(
+      'WHERE a.entityId IN [$machine]'
+    );
+    expect(toCypher({ refId: 'A', queryType: 'graph', instanceId: '$machines' }, vars)).toContain(
+      'WHERE a.entityId IN $machines'
+    );
+  });
+});
