@@ -16,7 +16,7 @@ import {
 import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
-import { historyCypher, toCypher, valuesCypher } from '../cypher';
+import { cypherWeighting, historyCypher, toCypher, valuesCypher } from '../cypher';
 import { shortType } from '../tree';
 import {
   AtlasOptions,
@@ -26,6 +26,7 @@ import {
   ColorBy,
   HistoryPick,
   CypherFormat,
+  CypherWeighting,
   LineColorBy,
   RelationshipColor,
   ValuesLayout,
@@ -57,6 +58,18 @@ const formats: Array<SelectableValue<CypherFormat>> = [
     value: 'timeseries',
     description: 'One series per combination of the text columns (e.g. entity, property), with the time column',
   },
+];
+
+const weightings: Array<SelectableValue<CypherWeighting>> = [
+  { label: 'Off', value: 'none', description: 'Draw the rows as returned' },
+  {
+    label: 'Auto',
+    value: 'auto',
+    description: 'Like the Data view: each value holds until the next; one line that keeps stops and spikes',
+  },
+  { label: 'Minute', value: 'minute', description: 'Time-weighted average per minute, like the Data view' },
+  { label: 'Hour', value: 'hour', description: 'Time-weighted average per hour, like the Data view' },
+  { label: 'Day', value: 'day', description: 'Time-weighted average per day, like the Data view' },
 ];
 
 const layouts: Array<SelectableValue<ValuesLayout>> = [
@@ -141,7 +154,11 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
           ? historyCypher(query, nodes, vars, containment)
           : valuesCypher(query, nodes, vars, containment);
         if (r.cypher) {
-          update({ queryType: 'cypher', cypher: r.cypher, format: trend ? 'timeseries' : 'auto' });
+          update(
+            trend
+              ? { queryType: 'cypher', cypher: r.cypher, format: 'timeseries', weighting: cypherWeighting(query) }
+              : { queryType: 'cypher', cypher: r.cypher, format: 'auto' }
+          );
         } else {
           setCypherError(r.error);
         }
@@ -295,6 +312,27 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
                 onChange={(v) => update({ format: v })}
               />
             </InlineField>
+            {query.format === 'timeseries' && (
+              <InlineField
+                label="Time-weight"
+                tooltip="Each returned value holds until the next one, as in the Data view. Return raw values (v.Timestamp AS time, v.Value AS value) for this."
+              >
+                <RadioButtonGroup
+                  options={weightings}
+                  value={query.weighting ?? 'none'}
+                  onChange={(v) => update({ weighting: v })}
+                />
+              </InlineField>
+            )}
+            {query.format === 'timeseries' &&
+              (query.weighting === 'minute' || query.weighting === 'hour' || query.weighting === 'day') && (
+                <InlineField label="Min/max" tooltip="Add min and max series next to the bucket average">
+                  <InlineSwitch
+                    value={!!query.includeMinMax}
+                    onChange={(e) => update({ includeMinMax: e.currentTarget.checked })}
+                  />
+                </InlineField>
+              )}
             <span style={{ opacity: 0.75, fontSize: 12 }}>
               Read-only. Use <code>$name</code> for dashboard variables; they are sent as Cypher parameters (a
               multi-value variable becomes a list, for <code>IN $name</code>). Runs when the editor loses focus or on

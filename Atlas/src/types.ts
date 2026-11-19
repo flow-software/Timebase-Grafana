@@ -38,6 +38,8 @@ export interface RelationshipColor {
 }
 
 export type CypherFormat = 'auto' | 'table' | 'graph' | 'timeseries';
+/** Cypher time series: time-weight the returned values like the Data view, or leave them as returned. */
+export type CypherWeighting = 'none' | 'auto' | 'minute' | 'hour' | 'day';
 
 export interface AtlasQuery extends DataQuery {
   queryType?: AtlasQueryType;
@@ -79,6 +81,8 @@ export interface AtlasQuery extends DataQuery {
   /** Filled in at query time from Grafana variables. Not edited by the user. */
   parameters?: Record<string, unknown>;
   format?: CypherFormat;
+  /** Cypher time series only. Missing means "none" (as returned). */
+  weighting?: CypherWeighting;
   /** Selection variables: what the values are. */
   returns?: VariableReturns;
 }

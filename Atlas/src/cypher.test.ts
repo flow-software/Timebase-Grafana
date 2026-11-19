@@ -1,4 +1,4 @@
-import { cypherParameterNames, cypherString, historyCypher, toCypher, valuesCypher } from './cypher';
+import { cypherParameterNames, cypherString, cypherWeighting, historyCypher, toCypher, valuesCypher } from './cypher';
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -106,12 +106,14 @@ describe('historyCypher', () => {
     expect(cypher).toContain('MATCH (n:CNCProduction) WHERE n.entityId IN ["CNC01-Production", "CNC02-Production"]');
     expect(cypher).toContain('MATCH (n:MotorType) WHERE n.entityId IN ["CNC01-SpindleMotor"]');
     expect(cypher!.split('UNION ALL')).toHaveLength(2);
-    expect(cypher).toContain('relative(v.Timestamp, $bucket) AS time');
+    expect(cypher).toContain('v.Timestamp AS time, v.Value AS value');
+    expect(cypher).toContain('time-weights them like the Data view (Time-weight: Auto)');
+    expect(cypher).not.toContain('avg(');
     expect(cypher).toContain('// Left out, not numbers: CNC01-Production JobNumber (text)');
     expect(cypher).not.toContain(' AS instance');
   });
 
-  it('reads raw values for Raw and fixed buckets for Hour', () => {
+  it('reads raw values for every aggregation and weights them to match', () => {
     const sel = [{ instance: 'CNC02-Production', property: 'FeedRate' }];
     expect(
       historyCypher({ refId: 'A', queryType: 'history', aggregation: 'raw', selection: sel }, nodes).cypher
@@ -121,7 +123,10 @@ describe('historyCypher', () => {
         { refId: 'A', queryType: 'history', aggregation: 'hour', includeMinMax: true, selection: sel },
         nodes
       ).cypher
-    ).toContain('relative(v.Timestamp, "h") AS time, avg(v.Value) AS value, min(v.Value) AS min');
+    ).toContain('v.Timestamp AS time, v.Value AS value');
+    expect(cypherWeighting({ refId: 'A', aggregation: 'hour' })).toBe('hour');
+    expect(cypherWeighting({ refId: 'A', aggregation: 'raw' })).toBe('none');
+    expect(cypherWeighting({ refId: 'A' })).toBe('auto');
   });
 
   it('explains what cannot be converted', () => {
