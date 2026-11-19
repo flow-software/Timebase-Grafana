@@ -291,6 +291,7 @@ interface ReadGroup {
   prop: string;
   ids: string[];
   match?: string; // MATCH ... WHERE for a variable pick; literal ids otherwise
+  part?: string; // a record's numeric part, read raw like the Trend does
   guard?: string; // "FeedRate" IN $prop, for a property from a variable
 }
 
@@ -340,7 +341,28 @@ export function historyCypher(
       if (match && !live.some((l) => l.name === prop)) {
         continue; // none of the variable's instances of this type has it
       }
-      const kind = live.find((p) => p.name === prop)?.kind ?? 'unknown';
+      const lp = live.find((p) => p.name === prop);
+      const kind = lp?.kind ?? 'unknown';
+      if (kind === 'record' && IDENT.test(n.type) && IDENT.test(prop)) {
+        // The Trend reads a record raw, one column per part; its number parts plot.
+        const parts = lp?.parts ?? [];
+        for (const part of parts) {
+          if (part.kind !== 'number' || !IDENT.test(part.name)) {
+            left.push(`${n.id} ${prop}.${part.name} (${part.kind})`);
+            continue;
+          }
+          const key = [n.type, prop, part.name, match ?? '', guard?.(prop) ?? ''].join('\u0000');
+          const g = groups.get(key) ?? { type: n.type, prop, part: part.name, ids: [], match, guard: guard?.(prop) };
+          if (!match && !g.ids.includes(n.id)) {
+            g.ids.push(n.id);
+          }
+          groups.set(key, g);
+        }
+        if (parts.length === 0) {
+          left.push(`${n.id} ${prop} (record with no known parts)`);
+        }
+        continue;
+      }
       if (!PLOTTABLE.has(kind) || !IDENT.test(n.type) || !IDENT.test(prop)) {
         left.push(`${n.id} ${prop} (${kind})`);
         continue;
@@ -413,14 +435,23 @@ export function historyCypher(
     ? `relative(v.Timestamp, ${unit}) AS time, avg(v.Value) AS value` +
       (q.includeMinMax ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
     : 'v.Timestamp AS time, v.Value AS value';
-  const parts = Array.from(groups.values()).map(
-    (g) =>
-      (g.match ?? `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]`) +
-      '\n' +
-      `UNWIND n.${g.prop} AS v\n` +
-      `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)` +
-      (g.guard ? ` AND ${g.guard}` : '') +
-      `\nRETURN n.entityId AS entity, ${cypherString(g.prop)} AS property, ${ret}`
+  // A record part is read raw (as the Trend does), with the same columns as the other reads.
+  const partRet = (p: string) =>
+    `v.Timestamp AS time, v.${p} AS value` + (unit && q.includeMinMax ? `, v.${p} AS min, v.${p} AS max` : '');
+  const parts = Array.from(groups.values()).map((g) =>
+    g.part
+      ? (g.match ?? `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]`) +
+        '\n' +
+        `UNWIND n.${g.prop} AS v\n` +
+        `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)` +
+        (g.guard ? ` AND ${g.guard}` : '') +
+        `\nRETURN n.entityId AS entity, ${cypherString(g.prop + '.' + g.part)} AS property, ${partRet(g.part)}`
+      : (g.match ?? `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]`) +
+        '\n' +
+        `UNWIND n.${g.prop} AS v\n` +
+        `WITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)` +
+        (g.guard ? ` AND ${g.guard}` : '') +
+        `\nRETURN n.entityId AS entity, ${cypherString(g.prop)} AS property, ${ret}`
   );
   const head = [
     `// History: one read per entity type and property (Atlas reads stored values only for a typed MATCH).`,
@@ -441,6 +472,9 @@ export function historyCypher(
   }
   if (left.length) {
     head.push(`// Left out, not numbers: ${left.join(', ')}`);
+  }
+  if (Array.from(groups.values()).some((g) => g.part)) {
+    head.push('// Record parts (e.g. LiveAsset.MxLocationId) are read raw, one value per stored version.');
   }
   return { cypher: head.join('\n') + '\n' + parts.join('\nUNION ALL\n') };
 }

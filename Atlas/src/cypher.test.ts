@@ -289,3 +289,34 @@ describe('nested under a variable in Edit as Cypher', () => {
     ).toContain('MATCH (n:CNCMachine) WHERE n.entityId IN [$query0]\nRETURN n\nUNION ALL\nMATCH (m)-[');
   });
 });
+
+describe('record properties in Edit as Cypher', () => {
+  it('reads each number part raw, like the Trend', () => {
+    const nodes = [
+      {
+        id: 'CNC01',
+        type: 'CNCMachine',
+        live: [
+          {
+            name: 'LiveAsset',
+            kind: 'record' as const,
+            parts: [
+              { name: 'MxAssetName', kind: 'text' as const },
+              { name: 'MxLocationId', kind: 'number' as const },
+            ],
+          },
+        ],
+      },
+    ];
+    const { cypher, error } = historyCypher(
+      { refId: 'A', queryType: 'history', selection: [{ instance: 'CNC01' }] },
+      nodes
+    );
+    expect(error).toBeUndefined();
+    expect(cypher).toContain('UNWIND n.LiveAsset AS v');
+    expect(cypher).toContain(
+      'RETURN n.entityId AS entity, "LiveAsset.MxLocationId" AS property, v.Timestamp AS time, v.MxLocationId AS value'
+    );
+    expect(cypher).toContain('// Left out, not numbers: CNC01 LiveAsset.MxAssetName (text)');
+  });
+});
