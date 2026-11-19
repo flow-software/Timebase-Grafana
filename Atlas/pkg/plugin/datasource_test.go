@@ -285,6 +285,17 @@ func TestGraphStyling(t *testing.T) {
 	if _, ci := nodes.FieldByName("color"); ci < 0 {
 		t.Fatal("colour by type needs a color field")
 	}
+
+	// Colour None with relationship names: instances still get a ring colour.
+	r = run(t, ds, `{"queryType":"cypher","cypher":"MATCH (a)-[r]->(b) RETURN a, r, b","relationshipNodes":true,"colorBy":"none"}`)
+	nodes = r.Frames[0]
+	_, ci = nodes.FieldByName("color")
+	_, ti := nodes.FieldByName("detail__type")
+	for i := 0; i < nodes.Rows(); i++ {
+		if !strings.HasPrefix(nodes.Fields[0].At(i).(string), "rel:") && nodes.Fields[ci].At(i).(string) == "" {
+			t.Fatalf("instance %v (%v) has no ring colour", nodes.Fields[0].At(i), nodes.Fields[ti].At(i))
+		}
+	}
 }
 
 func TestQualityText(t *testing.T) {
