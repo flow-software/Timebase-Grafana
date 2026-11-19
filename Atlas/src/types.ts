@@ -178,4 +178,6 @@ export interface LiveProperty {
   name: string;
   /** record: a compound with its own timestamp (e.g. MaintainX LiveAsset), read as one column per part. */
   kind: 'number' | 'text' | 'boolean' | 'record' | 'unknown';
+  /** Record parts (fields other than Timestamp), with the kind of their current value. */
+  parts?: Array<{ name: string; kind: LiveProperty['kind'] }>;
 }

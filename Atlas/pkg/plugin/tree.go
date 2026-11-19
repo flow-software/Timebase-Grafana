@@ -24,6 +24,37 @@ type TreeNode struct {
 type LiveProperty struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	// Parts of a record (kind "record"): its fields other than Timestamp,
+	// with the kind of their current value, for "Edit as Cypher".
+	Parts []LiveProperty `json:"parts,omitempty"`
+}
+
+// recordParts lists the plain fields of a record value, sorted by name.
+func recordParts(v any) []LiveProperty {
+	m, ok := asMap(v)
+	if !ok {
+		return nil
+	}
+	var out []LiveProperty
+	for k, x := range m {
+		if k == "Timestamp" || !labelPattern.MatchString(k) {
+			continue
+		}
+		kind := "unknown"
+		switch x.(type) {
+		case float64:
+			kind = "number"
+		case string:
+			kind = "text"
+		case bool:
+			kind = "boolean"
+		case map[string]any, []any:
+			continue
+		}
+		out = append(out, LiveProperty{Name: k, Kind: kind})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // instanceTree builds the containment tree for one world in four reads:
@@ -69,7 +100,11 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 				if k := declared.kind(str(m["typeId"]), p.Name); k != "" {
 					kind = k
 				}
-				live[id] = append(live[id], LiveProperty{Name: p.Name, Kind: kind})
+				lp := LiveProperty{Name: p.Name, Kind: kind}
+				if kind == "record" {
+					lp.Parts = recordParts(m[p.Name])
+				}
+				live[id] = append(live[id], lp)
 			}
 		}
 	}

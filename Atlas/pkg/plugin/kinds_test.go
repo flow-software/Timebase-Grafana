@@ -59,3 +59,17 @@ func TestHistoryTargetsUseDeclaredKind(t *testing.T) {
 		t.Fatal("without a declared kind an empty value is tried as a number")
 	}
 }
+
+func TestRecordParts(t *testing.T) {
+	v := map[string]any{"Timestamp": "2026-11-06T10:38:08Z", "MxLocationId": 6380808.0, "MxAssetName": "CNC01", "MxBarcode": nil, "Nested": map[string]any{"a": 1.0}}
+	got := recordParts(v)
+	want := []LiveProperty{{Name: "MxAssetName", Kind: "text"}, {Name: "MxBarcode", Kind: "unknown"}, {Name: "MxLocationId", Kind: "number"}}
+	if len(got) != len(want) {
+		t.Fatalf("parts %v", got)
+	}
+	for i := range want {
+		if got[i].Name != want[i].Name || got[i].Kind != want[i].Kind {
+			t.Fatalf("parts %v, want %v", got, want)
+		}
+	}
+}
