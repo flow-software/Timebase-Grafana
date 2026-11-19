@@ -283,6 +283,12 @@ func splitSeries(f *data.Frame) (data.Frames, error) {
 			valueIdx = append(valueIdx, i)
 		}
 	}
+	if f.Rows() == 0 {
+		// No rows means no column types either: say so, not "needs a timestamp".
+		empty := data.NewFrame("result")
+		addNotice(empty, data.NoticeSeverityInfo, "The query returned no rows.")
+		return data.Frames{empty}, nil
+	}
 	if timeIdx < 0 {
 		return nil, badRequest("time series output needs a timestamp column, e.g. RETURN v.Timestamp AS time")
 	}

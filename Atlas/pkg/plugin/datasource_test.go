@@ -903,3 +903,15 @@ func TestCypherTimestampColumnsBecomeTime(t *testing.T) {
 		t.Fatalf("timestamp column type = %v", r.Frames[0].Fields[0].Type())
 	}
 }
+
+func TestCypherTimeSeriesNoRows(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{"UNWIND": `{"columns":["entity","property","time","value"],"data":[]}`}}
+	ds := newTestDS(t, f, noAuth)
+	r := run(t, ds, `{"queryType":"cypher","format":"timeseries","cypher":"MATCH (n:T) UNWIND n.P AS v RETURN n.entityId AS entity, v.Timestamp AS time, v.Value AS value"}`)
+	if r.Error != nil {
+		t.Fatalf("no rows must not be an error: %v", r.Error)
+	}
+	if len(r.Frames) != 1 || r.Frames[0].Meta == nil || len(r.Frames[0].Meta.Notices) == 0 || r.Frames[0].Meta.Notices[0].Text != "The query returned no rows." {
+		t.Fatalf("frames %v", r.Frames)
+	}
+}

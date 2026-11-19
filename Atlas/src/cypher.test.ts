@@ -231,3 +231,61 @@ describe('variables in Edit as Cypher', () => {
     ).toBe('MATCH (n)\nWHERE n.entityId IN [m IN $machines | m + "-Production"]\nRETURN n');
   });
 });
+
+describe('nested under a variable in Edit as Cypher', () => {
+  const nodes = [
+    { id: 'CNC01', type: 'CNCMachine', live: [{ name: 'LiveAsset', kind: 'record' as const }] },
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      parentId: 'CNC01',
+      live: [{ name: 'PartCount', kind: 'number' as const }],
+    },
+    { id: 'CNC01-Spindle', type: 'SpindleType', parentId: 'CNC01', live: [{ name: 'RPM', kind: 'number' as const }] },
+  ];
+  const vars = { values: (t: string) => (t === '$query0' ? ['CNC01'] : [t]), isMulti: () => false };
+  const rels = ['cncMachineContainsProduction', 'cncBaseContainsSpindle'];
+
+  it('reads the nested type through containment, not the machine itself', () => {
+    const { cypher, error } = historyCypher(
+      {
+        refId: 'A',
+        queryType: 'history',
+        selection: [{ instance: '$query0', scope: 'nested', nestedType: 'CNCProduction', property: 'PartCount' }],
+      },
+      nodes,
+      vars,
+      rels
+    );
+    expect(error).toBeUndefined();
+    expect(cypher).toContain(
+      'MATCH (m)-[:cncMachineContainsProduction|cncBaseContainsSpindle*1..1]->(n:CNCProduction) WHERE m.entityId IN [$query0]'
+    );
+    expect(cypher).toContain('UNWIND n.PartCount AS v');
+    expect(cypher).not.toContain('CNCMachine');
+  });
+
+  it('reads the variable itself and everything nested, by type, skipping properties a type lacks', () => {
+    const { cypher } = historyCypher(
+      { refId: 'A', queryType: 'history', selection: [{ instance: '$query0', scope: 'nested', property: 'RPM' }] },
+      nodes,
+      vars,
+      rels
+    );
+    expect(cypher).toContain('(n:SpindleType)');
+    expect(cypher).not.toContain('(n:CNCMachine)');
+    expect(cypher).not.toContain('(n:CNCProduction)');
+    expect(cypher!.split('UNION ALL')).toHaveLength(1);
+  });
+
+  it('writes Current for nested picks with a variable', () => {
+    expect(
+      valuesCypher(
+        { refId: 'A', queryType: 'values', selection: [{ instance: '$query0', scope: 'nested' }] },
+        nodes,
+        vars,
+        rels
+      ).cypher
+    ).toContain('MATCH (n:CNCMachine) WHERE n.entityId IN [$query0]\nRETURN n\nUNION ALL\nMATCH (m)-[');
+  });
+});

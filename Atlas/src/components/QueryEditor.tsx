@@ -17,6 +17,7 @@ import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
 import { historyCypher, toCypher, valuesCypher } from '../cypher';
+import { shortType } from '../tree';
 import {
   AtlasOptions,
   AtlasQuery,
@@ -123,12 +124,22 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       return;
     }
     setCypherError(undefined);
-    datasource
-      .getTree(branch, domain)
-      .then((nodes) => {
+    Promise.all([datasource.getTree(branch, domain), datasource.getRelationshipColors(branch, domain)])
+      .then(([nodes, rels]) => {
         const trend = queryType === 'history';
         const vars = datasource.cypherVars();
-        const r = trend ? historyCypher(query, nodes, vars) : valuesCypher(query, nodes, vars);
+        // Containment relationships by local name, for "nested under $variable".
+        const containment = Array.from(
+          new Set(
+            rels
+              .filter((r) => r.isContainment)
+              .map((r) => shortType(r.uri))
+              .filter((n) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n))
+          )
+        );
+        const r = trend
+          ? historyCypher(query, nodes, vars, containment)
+          : valuesCypher(query, nodes, vars, containment);
         if (r.cypher) {
           update({ queryType: 'cypher', cypher: r.cypher, format: trend ? 'timeseries' : 'auto' });
         } else {
