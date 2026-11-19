@@ -11,6 +11,7 @@
 - Fix: Auto Trend of a text property whose current value is empty returned Atlas 500; it is now read raw.
 - Trend averages are time-weighted (each value counts for as long as it held), in Auto and in Minute / Hour / Day buckets, the way Timebase Explorer averages. Exact from raw values up to 3 hours or 100,000 values, otherwise from Atlas minute buckets. Live on CNC02 FeedRate, one hour read 2395 as a plain average and 680 time-weighted: the machine stood still most of that hour. A slice or bucket with no value breaks the line.
 - Units on Trend series from the instance's `UOM` (atlas-common Tag pattern, e.g. InfoHub KPIs).
+- "Edit as Cypher" keeps dashboard variables in Data selections as Cypher parameters (`[m IN $machines | m + "-Production"]`, one read per property switched on by `"FeedRate" IN $prop`).
 - Dashboard variables from a **Selection** in the Select modal: instance ids (e.g. every CNCMachine) or property names. `$variables` also work in the property part of a pick (`$machine-Production/$prop`).
 - Demo dashboard: a state timeline of job, program and alarm per machine, `$machines` and `$prop` Selection variables, and an hourly time-weighted FeedRate panel.
 

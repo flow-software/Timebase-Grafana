@@ -180,3 +180,54 @@ describe('nested and type picks', () => {
     ).toContain('IN ["CNC01", "CNC01-Production"]');
   });
 });
+
+describe('variables in Edit as Cypher', () => {
+  const nodes = [
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      live: [
+        { name: 'FeedRate', kind: 'number' as const },
+        { name: 'SpindleTemp', kind: 'number' as const },
+        { name: 'JobNumber', kind: 'text' as const },
+      ],
+    },
+    { id: 'CNC02-Production', type: 'CNCProduction', live: [{ name: 'FeedRate', kind: 'number' as const }] },
+  ];
+  const vars = {
+    values: (t: string) => (t.includes('$machines') ? ['CNC01', 'CNC02'].map((m) => t.replace('$machines', m)) : [t]),
+    isMulti: (name: string) => name === 'machines' || name === 'prop',
+  };
+
+  it('keeps instance and property variables as Cypher parameters', () => {
+    const { cypher, error } = historyCypher(
+      { refId: 'A', queryType: 'history', selection: [{ instance: '$machines-Production', property: '$prop' }] },
+      nodes,
+      vars
+    );
+    expect(error).toBeUndefined();
+    expect(cypher).toContain('MATCH (n:CNCProduction) WHERE n.entityId IN [m IN $machines | m + "-Production"]');
+    expect(cypher).toContain('AND "FeedRate" IN $prop');
+    expect(cypher).toContain('AND "SpindleTemp" IN $prop');
+    expect(cypher).not.toContain('"JobNumber" IN');
+    expect(cypher!.split('UNION ALL')).toHaveLength(2);
+  });
+
+  it('wraps a single-value variable in a list', () => {
+    const one = { ...vars, isMulti: () => false };
+    const { cypher } = historyCypher(
+      { refId: 'A', queryType: 'history', selection: [{ instance: 'CNC01-Production', property: '$prop' }] },
+      nodes,
+      one
+    );
+    expect(cypher).toContain('WHERE n.entityId IN ["CNC01-Production"]');
+    expect(cypher).toContain('AND "FeedRate" IN [$prop]');
+  });
+
+  it('writes Current with a variable id list', () => {
+    expect(
+      valuesCypher({ refId: 'A', queryType: 'values', selection: [{ instance: '$machines-Production' }] }, nodes, vars)
+        .cypher
+    ).toBe('MATCH (n)\nWHERE n.entityId IN [m IN $machines | m + "-Production"]\nRETURN n');
+  });
+});
