@@ -158,6 +158,10 @@ export function expandSelection(picks: HistoryPick[], nodes: TreeNodeData[]): Hi
     let ids: string[];
     if (p.scope === 'nested' && byId.has(p.instance)) {
       ids = subtreeIds(nodes, p.instance);
+      if (p.nestedType) {
+        const t = shortType(p.nestedType);
+        ids = ids.filter((id) => byId.get(id)?.type === t);
+      }
     } else if (p.scope === 'type' && p.type) {
       const t = shortType(p.type);
       ids = nodes.filter((n) => n.type === t).map((n) => n.id);

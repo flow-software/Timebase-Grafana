@@ -1,4 +1,4 @@
-import { parsePick } from './HistoryField';
+import { parsePick, suggestions } from './HistoryField';
 import { upgrade } from './QueryEditor';
 
 describe('parsePick', () => {
@@ -55,5 +55,32 @@ describe('parsePick', () => {
       property: 'FeedRate',
     });
     expect(parsePick('type:CNCMachine')).toEqual({ instance: '', type: 'CNCMachine', scope: 'type' });
+  });
+});
+
+describe('variable suggestions', () => {
+  const nodes = [
+    { id: 'CNC01', type: 'CNCMachine' },
+    { id: 'CNC01-Production', type: 'CNCProduction', parentId: 'CNC01' },
+  ];
+  const vars = {
+    instances: [{ name: 'machines', values: ['CNC01', 'CNC02'] }],
+    properties: [{ name: 'prop', values: ['FeedRate'] }],
+  };
+
+  it('offers the variable for an instance it holds, and for one nested under it', () => {
+    expect(suggestions({ instance: 'CNC01', type: 'CNCMachine' }, nodes, vars).map((s) => s.pick)).toEqual([
+      { instance: '$machines' },
+    ]);
+    expect(suggestions({ instance: 'CNC01-Production', property: 'FeedRate' }, nodes, vars).map((s) => s.pick)).toEqual(
+      [
+        { instance: '$machines', scope: 'nested', nestedType: 'CNCProduction', property: 'FeedRate' },
+        { instance: 'CNC01-Production', property: '$prop' },
+      ]
+    );
+  });
+
+  it('offers nothing for picks that already use variables', () => {
+    expect(suggestions({ instance: '$machines', property: '$prop' }, nodes, vars)).toEqual([]);
   });
 });

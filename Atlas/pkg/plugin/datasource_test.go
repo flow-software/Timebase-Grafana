@@ -744,6 +744,7 @@ func TestExpandPicksNestedAndType(t *testing.T) {
 		{Type: "urn:x:CNCProduction", Scope: "type", Property: "FeedRate"},
 		{Instance: "CNC01", Scope: "nested", Property: "RPM"},
 		{Instance: "Plain", Property: "X"},
+		{Instance: "CNC02", Scope: "nested", NestedType: "urn:x:CNCProduction", Property: "FeedRate"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -752,7 +753,7 @@ func TestExpandPicksNestedAndType(t *testing.T) {
 	for _, p := range got {
 		keys = append(keys, p.Instance+"/"+p.Property)
 	}
-	want := "CNC01/ CNC01-Production/ CNC01-Spindle/ CNC01-Production/FeedRate CNC02-Production/FeedRate CNC01-Spindle/RPM Plain/X"
+	want := "CNC01/ CNC01-Production/ CNC01-Spindle/ CNC01-Production/FeedRate CNC02-Production/FeedRate CNC01-Spindle/RPM Plain/X CNC02-Production/FeedRate"
 	if strings.Join(keys, " ") != want {
 		t.Fatalf("got  %s, want %s", strings.Join(keys, " "), want)
 	}

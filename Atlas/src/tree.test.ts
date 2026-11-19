@@ -1,4 +1,4 @@
-import { ancestorsOf, buildTree, filterTree, liveDescendants, pickTree, variableValues } from './tree';
+import { ancestorsOf, buildTree, expandSelection, filterTree, liveDescendants, pickTree, variableValues } from './tree';
 import { TreeNodeData } from './types';
 
 const nodes: TreeNodeData[] = [
@@ -130,5 +130,25 @@ describe('variableValues', () => {
       world
     );
     expect(v.value).toEqual(['FeedRate', 'JobNumber']);
+  });
+});
+
+describe('nested picks of one type', () => {
+  it('keeps only the nested instances of that type', () => {
+    const world: TreeNodeData[] = [
+      { id: 'CNC01', type: 'CNCMachine' },
+      {
+        id: 'CNC01-Production',
+        type: 'CNCProduction',
+        parentId: 'CNC01',
+        live: [{ name: 'FeedRate', kind: 'number' }],
+      },
+      { id: 'CNC01-Spindle', type: 'MotorType', parentId: 'CNC01', live: [{ name: 'RPM', kind: 'number' }] },
+    ];
+    expect(
+      expandSelection([{ instance: 'CNC01', scope: 'nested', nestedType: 'CNCProduction' }], world).map(
+        (p) => p.instance
+      )
+    ).toEqual(['CNC01-Production']);
   });
 });
