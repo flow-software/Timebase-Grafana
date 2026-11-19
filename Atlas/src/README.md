@@ -16,7 +16,7 @@ Every query has a **Branch** and **Domain**. Leave them empty to use the default
 
 ### Graph
 
-- **Start at**: empty shows the whole domain. **Browse** opens the instance tree, nested by containment as in the Atlas Instances view, with a filter; you can also type an id or a `$variable`.
+- **Start at**: empty shows the whole domain. **Select instance** opens the instance tree, nested by containment as in the Atlas Instances view, with a filter and the dashboard variables whose values are instances listed first; you can also type an id or a `$variable`. The pick shows as a chip, like the Data selection; its **$** button offers a variable that holds the instance ("Use `$machine` instead of CNC02"). A multi-value variable gives one graph around all its instances.
 - **Colour**: _Data quality_ splits each node's ring by the quality of its live values (green Good, yellow Uncertain, red Bad, grey no data, blue no live values). _Entity type_ gives each type its own colour.
 - **Lines**: _Containment / other_ draws containment grey and solid, other relationships orange and dashed. _Relationship type_ gives each relationship type its own colour; containment stays solid. A key under the options lists the types in the current result. A type keeps its colour across panels.
 - **Relationship names**: the Node Graph panel shows relationship names only on hover. Switch this on to draw each relationship as a small dot with its name, so names are always visible.

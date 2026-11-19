@@ -47,7 +47,8 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
       ...query,
       branch: r(query.branch),
       domain: r(query.domain),
-      instanceId: r(query.instanceId),
+      // Graph start: a multi-value variable becomes a comma-separated list (one graph around all).
+      instanceId: query.instanceId ? srv.replace(query.instanceId, scopedVars, 'csv') : query.instanceId,
       entityType: r(query.entityType),
     };
 

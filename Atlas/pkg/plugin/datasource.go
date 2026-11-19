@@ -273,7 +273,15 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 	if strings.HasPrefix(id, "rel:") {
 		return nil, badRequest("that is a relationship, not an instance; pick one of the entities it connects")
 	}
-	start, err := d.client.Query(ctx, branch, domain, "MATCH (a) WHERE a.entityId = $id RETURN a", map[string]any{"id": id})
+	// Several start instances (a multi-value variable arrives comma-separated)
+	// give one graph around all of them.
+	var starts []string
+	for _, s := range strings.Split(id, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			starts = append(starts, s)
+		}
+	}
+	start, err := d.client.Query(ctx, branch, domain, "MATCH (a) WHERE a.entityId IN $ids RETURN a", map[string]any{"ids": starts})
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +292,9 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 	if len(rows) == 0 {
 		return nil, badRequest(fmt.Sprintf("instance %q not found in %s/%s", id, branch, domain))
 	}
-	g.add(rows[0][0])
+	for _, r := range rows {
+		g.add(r[0])
+	}
 
 	depth := qm.Depth
 	if depth <= 0 {
@@ -293,7 +303,7 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 	if depth > maxDepth {
 		depth = maxDepth
 	}
-	frontier := []string{id}
+	frontier := starts
 	truncated := false
 	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
 		res, err := d.client.Query(ctx, branch, domain,

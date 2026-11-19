@@ -42,7 +42,7 @@ export function cypherString(s: string): string {
  * undefined where there is no single-query equivalent: Atlas returns internal
  * ids for multi-hop paths, so the plugin expands those one hop at a time.
  */
-export function toCypher(q: AtlasQuery): string | undefined {
+export function toCypher(q: AtlasQuery, vars: CypherVars = NO_VARS): string | undefined {
   switch (q.queryType ?? 'graph') {
     case 'graph': {
       const limit = q.limit && q.limit > 0 ? q.limit : 2000;
@@ -52,7 +52,10 @@ export function toCypher(q: AtlasQuery): string | undefined {
       if ((q.depth ?? 1) > 1) {
         return undefined;
       }
-      return `MATCH (a)-[r]-(b)\nWHERE a.entityId = ${cypherString(q.instanceId)}\nRETURN a, r, b\nLIMIT ${limit}`;
+      // A start variable stays a variable (several values: around all of them).
+      const v = parseVar(q.instanceId);
+      const where = v ? `a.entityId IN ${idListExpr(v, vars)}` : `a.entityId = ${cypherString(q.instanceId)}`;
+      return `MATCH (a)-[r]-(b)\nWHERE ${where}\nRETURN a, r, b\nLIMIT ${limit}`;
     }
     case 'values':
     case 'instances': {

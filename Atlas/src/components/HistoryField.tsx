@@ -275,7 +275,7 @@ export function suggestions(p: HistoryPick, nodes: TreeNodeData[], vars: Selecti
   return out;
 }
 
-function VariableSuggestions({ options, onPick }: { options: Suggestion[]; onPick: (p: HistoryPick) => void }) {
+export function VariableSuggestions({ options, onPick }: { options: Suggestion[]; onPick: (p: HistoryPick) => void }) {
   if (options.length === 0) {
     return null;
   }

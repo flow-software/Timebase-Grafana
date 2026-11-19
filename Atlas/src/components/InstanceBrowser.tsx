@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { css, cx } from '@emotion/css';
-import { GrafanaTheme2 } from '@grafana/data';
+import { colorManipulator, GrafanaTheme2 } from '@grafana/data';
 import { Alert, Button, Icon, IconButton, Input, LoadingPlaceholder, Modal, useStyles2 } from '@grafana/ui';
 
 import { ancestorsOf, buildTree, filterTree, nodeName, TreeItem } from '../tree';
-import { TreeNodeData } from '../types';
+import { SelectionVariable, TreeNodeData } from '../types';
+import { timebase } from './timebase';
+
+const LOGO = 'public/plugins/flowsoftware-atlas-datasource/img/logo.svg';
 
 interface Props {
   isOpen: boolean;
@@ -22,6 +25,8 @@ interface Props {
   metaOf?: (n: TreeNodeData) => string;
   /** What the pickable rows are called in the count, e.g. "types". */
   noun?: string;
+  /** Dashboard variables whose values are instances; picking one gives "$name". */
+  variables?: SelectionVariable[];
 }
 
 /** Rows shown while filtering; more than this is slow and not useful to scroll. */
@@ -48,6 +53,7 @@ function BrowserBody({
   canSelect = () => true,
   metaOf = defaultMeta,
   noun = 'instances',
+  variables = [],
 }: Props) {
   const styles = useStyles2(getStyles);
   const [filter, setFilter] = useState('');
@@ -113,8 +119,47 @@ function BrowserBody({
     );
   };
 
+  const shownVars = variables.filter(
+    (v) => !filtering || v.name.toLowerCase().includes(filter.trim().replace(/^\$/, '').toLowerCase())
+  );
+  const renderVar = (v: SelectionVariable) => {
+    const id = '$' + v.name;
+    const first = nodes?.find((n) => n.id === v.values[0]);
+    return (
+      <li key={id}>
+        <div
+          className={cx(styles.row, id === selected && styles.selected)}
+          role="treeitem"
+          aria-selected={id === selected}
+        >
+          <span className={styles.spacer} />
+          <button type="button" className={styles.pick} onClick={() => onSelect(id)} title={`Select ${id}`}>
+            <Icon name="dollar-alt" size="sm" className={styles.varIcon} />
+            <span className={styles.name}>{id}</span>
+            <span className={styles.meta}>
+              now {v.values.slice(0, 4).join(', ')}
+              {v.values.length > 4 ? `, +${v.values.length - 4}` : ''}
+              {first ? ` · ${first.type}` : ''}
+            </span>
+          </button>
+        </div>
+      </li>
+    );
+  };
+
   return (
-    <Modal title={title} isOpen onDismiss={onDismiss} className={styles.modal}>
+    <Modal
+      title={
+        <span className={styles.title}>
+          <img src={LOGO} alt="" className={styles.logo} />
+          {title}
+        </span>
+      }
+      ariaLabel={title}
+      isOpen
+      onDismiss={onDismiss}
+      className={styles.modal}
+    >
       <div className={styles.toolbar}>
         <Input
           autoFocus
@@ -142,6 +187,15 @@ function BrowserBody({
               : `${nodes.filter(canSelect).length} ${noun}`}
           </div>
           <div className={styles.scroll}>
+            {shownVars.length > 0 && (
+              <>
+                <div className={styles.section}>Dashboard variables</div>
+                <ul className={styles.list} role="tree">
+                  {shownVars.map(renderVar)}
+                </ul>
+                <div className={styles.section}>Instances</div>
+              </>
+            )}
             <ul className={styles.list} role="tree">
               {filtered.roots.map((r) => renderItem(r, 0))}
             </ul>
@@ -160,6 +214,17 @@ function BrowserBody({
 
 const getStyles = (theme: GrafanaTheme2) => ({
   modal: css({ width: 760, maxWidth: '95vw' }),
+  title: css({ display: 'inline-flex', alignItems: 'center', gap: theme.spacing(1) }),
+  logo: css({ width: 22, height: 22 }),
+  varIcon: css({ color: timebase(theme).orange, alignSelf: 'center', flexShrink: 0 }),
+  section: css({
+    color: theme.colors.text.secondary,
+    fontSize: theme.typography.bodySmall.fontSize,
+    fontWeight: theme.typography.fontWeightMedium,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    padding: theme.spacing(0.75, 1, 0.25),
+  }),
   toolbar: css({ display: 'flex', gap: theme.spacing(1), alignItems: 'center', marginBottom: theme.spacing(1) }),
   summary: css({
     color: theme.colors.text.secondary,
@@ -181,7 +246,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     borderRadius: theme.shape.radius.default,
     '&:hover': { background: theme.colors.action.hover },
   }),
-  selected: css({ background: theme.colors.action.selected }),
+  selected: css({
+    background: colorManipulator.alpha(timebase(theme).blue, 0.12),
+    boxShadow: `inset 3px 0 0 ${timebase(theme).blue}`,
+  }),
   info: css({ cursor: 'default', opacity: 0.8 }),
   spacer: css({ display: 'inline-block', width: 20, flexShrink: 0 }),
   pick: css({

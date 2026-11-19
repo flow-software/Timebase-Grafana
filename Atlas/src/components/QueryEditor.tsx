@@ -112,7 +112,7 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       value: w.domain,
       description: w.instanceCount !== undefined ? `${w.instanceCount} instances` : undefined,
     }));
-  const asCypher = queryType === 'cypher' ? undefined : toCypher(query);
+  const asCypher = queryType === 'cypher' ? undefined : toCypher(query, datasource.cypherVars());
   // Data selections need the browse tree (types, properties, nested and type picks), so they are converted on click.
   const dataSelection = tab === 'data' && hasSelection;
   const [cypherError, setCypherError] = useState<string>();
