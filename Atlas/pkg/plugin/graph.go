@@ -232,11 +232,15 @@ var linePalette = []string{"#5794F2", "#FF9830", "#B877D9", "#8AB8FF", "#FFB357"
 // Colours. Quality uses Grafana's standard green/yellow/red; edges separate
 // containment (structure) from other relationships (how things interact).
 const (
-	colGood        = "#73BF69"
-	colUncertain   = "#FADE2A"
-	colBad         = "#F2495C"
-	colNoData      = "#8E8E8E"
-	colStatic      = "#5794F2"
+	colGood      = "#73BF69"
+	colUncertain = "#FADE2A"
+	colBad       = "#F2495C"
+	colNoData    = "#8E8E8E"
+	colStatic    = "#5794F2"
+	// colPlain is the ring with Colour "None". It is set explicitly, because
+	// once the nodes frame has a color field (relationship-name nodes), an
+	// empty colour draws no ring at all.
+	colPlain       = "#9FA7B3"
 	colContainment = "#6E6E6E"
 	colRelation    = "#FF9830"
 	colRelNode     = "#B877D9"
@@ -364,8 +368,11 @@ func (nb *nodeBuilder) addEntity(node map[string]any) {
 		ms = fmt.Sprintf("%d live", live)
 	}
 	color := ""
-	if nb.colorBy == colorType {
+	switch nb.colorBy {
+	case colorType:
 		color = nb.typeColor[typ]
+	case colorNone:
+		color = colPlain
 	}
 	nb.append(id, title, typ, typ, ms, color, 40, counts)
 }
