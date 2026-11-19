@@ -1,5 +1,5 @@
 import { expandSelection, shortType, subtreeIds } from './tree';
-import { AtlasQuery, TreeNodeData } from './types';
+import { AtlasQuery, CypherWeighting, TreeNodeData } from './types';
 
 /**
  * Names used as $parameters in a Cypher query, in order of first use.
@@ -303,8 +303,9 @@ interface ReadGroup {
  * instance's type and live properties. Atlas only reads stored values when
  * the MATCH names the type, so there is one read per type and property,
  * joined with UNION ALL into long rows (entity, property, time, value) for
- * the "Time series" output format. Auto aggregation uses $bucket, which the
- * plugin fills from the time range like the builder does.
+ * the "Time series" output format. Values are read raw, and the query's
+ * weighting (set from the aggregation) has the plugin time-weight them with
+ * the Data view's own code, so the panel looks the same in both modes.
  *
  * Variables stay variables. An instance like "$machine-Production" becomes
  * n.entityId IN [m IN $machine | m + "-Production"], typed by the instances
@@ -312,6 +313,20 @@ interface ReadGroup {
  * answers n[$prop] wrongly), so each property it could name gets its own
  * read, switched on by "Prop" IN $prop.
  */
+const WEIGHT_LABEL: Record<CypherWeighting, string> = {
+  none: 'Off',
+  auto: 'Auto',
+  minute: 'Minute',
+  hour: 'Hour',
+  day: 'Day',
+};
+
+/** The Cypher weighting that draws a Trend query's aggregation the same way. */
+export function cypherWeighting(q: AtlasQuery): CypherWeighting {
+  const agg = q.aggregation ?? 'auto';
+  return agg === 'raw' ? 'none' : agg;
+}
+
 export function historyCypher(
   q: AtlasQuery,
   nodes: TreeNodeData[],
@@ -432,15 +447,9 @@ export function historyCypher(
     return { error: 'The selection has no number values to plot.' };
   }
 
-  const agg = q.aggregation ?? 'auto';
-  const unit = { minute: '"m"', hour: '"h"', day: '"d"', auto: '$bucket' }[agg as string];
-  const ret = unit
-    ? `relative(v.Timestamp, ${unit}) AS time, avg(v.Value) AS value` +
-      (q.includeMinMax ? ', min(v.Value) AS min, max(v.Value) AS max' : '')
-    : 'v.Timestamp AS time, v.Value AS value';
-  // A record part is read raw (as the Trend does), with the same columns as the other reads.
-  const partRet = (p: string) =>
-    `v.Timestamp AS time, v.${p} AS value` + (unit && q.includeMinMax ? `, v.${p} AS min, v.${p} AS max` : '');
+  const weighting = cypherWeighting(q);
+  const ret = 'v.Timestamp AS time, v.Value AS value';
+  const partRet = (p: string) => `v.Timestamp AS time, v.${p} AS value`;
   const parts = Array.from(groups.values()).map((g) =>
     g.part
       ? (g.match ?? `MATCH (n:${g.type}) WHERE n.entityId IN [${g.ids.map(cypherString).join(', ')}]`) +
@@ -458,12 +467,10 @@ export function historyCypher(
   );
   const head = [
     `// History: one read per entity type and property (Atlas reads stored values only for a typed MATCH).`,
-    ...(unit
-      ? ['// Cypher avg() is a plain mean; the builder time-weights its averages (and Auto keeps stops and spikes).']
-      : []),
-    unit === '$bucket'
-      ? '// $from, $to and $bucket follow the time picker; use "m", "h" or "d" instead of $bucket for fixed buckets.'
-      : '// $from and $to follow the time picker.',
+    weighting === 'none'
+      ? '// Every stored value, as returned.'
+      : `// Stored values; the plugin time-weights them like the Data view (Time-weight: ${WEIGHT_LABEL[weighting]}).`,
+    '// $from and $to follow the time picker.',
   ];
   if (Array.from(groups.values()).some((g) => g.match || g.guard)) {
     head.push(

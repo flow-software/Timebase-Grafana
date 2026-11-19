@@ -130,6 +130,9 @@ type queryModel struct {
 	Cypher     string         `json:"cypher"`
 	Parameters map[string]any `json:"parameters"`
 	Format     string         `json:"format"`
+	// Cypher time series: time-weight the returned values like the Data view
+	// ("auto", "minute", "hour", "day"; empty or "none" leaves them as returned).
+	Weighting string `json:"weighting"`
 
 	IncludeQuality bool `json:"includeQuality"`
 	IncludeTime    bool `json:"includeTime"`
@@ -204,6 +207,7 @@ func (d *Datasource) query(ctx context.Context, query backend.DataQuery, dsUID, 
 	case queryValues:
 		frames, err = d.valuesQuery(ctx, branch, domain, qm)
 	case queryCypher:
+		qm.maxPoints = int(query.MaxDataPoints)
 		frames, err = d.cypherQuery(ctx, branch, domain, qm, query.TimeRange)
 	case queryHistory:
 		qm.maxPoints = int(query.MaxDataPoints)
@@ -432,9 +436,18 @@ func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm 
 	if err != nil {
 		return nil, err
 	}
+	if !validWeighting(qm.Weighting) {
+		return nil, badRequest(fmt.Sprintf("unknown weighting %q", qm.Weighting))
+	}
+	weighted := qm.Weighting != "" && qm.Weighting != "none"
+	// Weighted values are reduced to the panel's points, so more rows are read, as the Data view does.
+	limit := maxCypherRows
+	if weighted && qm.Format == formatSeries {
+		limit = maxHistoryRows
+	}
 	truncated := false
-	if len(rows) > maxCypherRows {
-		rows, truncated = rows[:maxCypherRows], true
+	if len(rows) > limit {
+		rows, truncated = rows[:limit], true
 	}
 
 	format := qm.Format
@@ -462,10 +475,17 @@ func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm 
 			if frames, err = splitSeries(frames[0]); err != nil {
 				return nil, err
 			}
+			if weighted {
+				frames = weighSeries(frames, qm.Weighting, tr.From, tr.To, qm.maxPoints, qm.IncludeMinMax)
+			}
 		}
 	}
 	if truncated {
-		addNotice(frames[0], data.NoticeSeverityWarning, fmt.Sprintf("Only the first %d rows are shown. Add a LIMIT to the query.", maxCypherRows))
+		msg := fmt.Sprintf("Only the first %d rows are shown. Add a LIMIT to the query.", limit)
+		if limit == maxHistoryRows {
+			msg = fmt.Sprintf("Only the first %d values are used. For long ranges, the Data view reads Atlas's minute or hour buckets instead.", limit)
+		}
+		addNotice(frames[0], data.NoticeSeverityWarning, msg)
 	}
 	return frames, nil
 }
