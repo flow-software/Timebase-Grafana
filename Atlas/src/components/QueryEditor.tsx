@@ -127,7 +127,8 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
       .getTree(branch, domain)
       .then((nodes) => {
         const trend = queryType === 'history';
-        const r = trend ? historyCypher(query, nodes) : valuesCypher(query, nodes);
+        const vars = datasource.cypherVars();
+        const r = trend ? historyCypher(query, nodes, vars) : valuesCypher(query, nodes, vars);
         if (r.cypher) {
           update({ queryType: 'cypher', cypher: r.cypher, format: trend ? 'timeseries' : 'auto' });
         } else {

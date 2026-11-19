@@ -1,7 +1,7 @@
 import { CoreApp, DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv, TemplateSrv } from '@grafana/runtime';
 
-import { cypherParameterNames } from './cypher';
+import { CypherVars, cypherParameterNames } from './cypher';
 import { AtlasVariableSupport } from './variables';
 import {
   AtlasOptions,
@@ -142,6 +142,18 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         ? [{ ...p, instance, type }]
         : this.expandText(p.property, scopedVars).map((property) => ({ ...p, instance, property, type }))
     );
+  }
+
+  /** Dashboard variables for "Edit as Cypher": their current values and whether they hold several. */
+  cypherVars(): CypherVars {
+    return {
+      values: (text) => this.expandText(text, {}),
+      isMulti: (name) => {
+        const v = this.templateSrv.getVariables().find((x) => x.name === name) as
+          { multi?: boolean; includeAll?: boolean } | undefined;
+        return !!(v?.multi || v?.includeAll);
+      },
+    };
   }
 
   /** The text with its variables replaced; one result per value of the first multi-value variable. */

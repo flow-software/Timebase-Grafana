@@ -166,7 +166,8 @@ export function expandSelection(picks: HistoryPick[], nodes: TreeNodeData[]): Hi
       continue;
     }
     for (const id of ids) {
-      if (!p.property || has(id, p.property)) {
+      // A property variable ($prop) is checked when it is resolved.
+      if (!p.property || p.property.includes('$') || has(id, p.property)) {
         out.push({ instance: id, property: p.property, type: byId.get(id)?.type });
       }
     }
