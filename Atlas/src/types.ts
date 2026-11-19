@@ -96,6 +96,24 @@ export interface HistoryPick {
   /** The instance's entity type when picked from the tree; for scope "type", the type to read. */
   type?: string;
   scope?: 'nested' | 'type';
+  /**
+   * Scope "nested" only: read only the nested instances of this entity type
+   * (e.g. "$machines", nested, CNCProduction: the Production instance under
+   * each machine). Matches by type, not by id spelling.
+   */
+  nestedType?: string;
+}
+
+/** A dashboard variable that can stand in a selection, with its current values. */
+export interface SelectionVariable {
+  name: string;
+  values: string[];
+}
+
+/** Dashboard variables usable in a selection: values that are instance ids, or property names. */
+export interface SelectionVariables {
+  instances: SelectionVariable[];
+  properties: SelectionVariable[];
 }
 
 export const DEFAULT_QUERY: Partial<AtlasQuery> = {

@@ -9,6 +9,7 @@ import {
   DEFAULT_QUERY,
   HistoryPick,
   InstanceOption,
+  SelectionVariables,
   RelationshipColor,
   TreeNodeData,
   TypeOption,
@@ -142,6 +143,36 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         ? [{ ...p, instance, type }]
         : this.expandText(p.property, scopedVars).map((property) => ({ ...p, instance, property, type }))
     );
+  }
+
+  /**
+   * The dashboard variables that can stand in a selection: those whose
+   * current values are instance ids in the tree, and those whose values are
+   * all property names. Empty outside a dashboard (Explore).
+   */
+  selectionVariables(nodes: TreeNodeData[]): SelectionVariables {
+    const ids = new Set(nodes.map((n) => n.id));
+    const props = new Set(nodes.flatMap((n) => (n.live ?? []).map((l) => l.name)));
+    const out: SelectionVariables = { instances: [], properties: [] };
+    for (const v of this.templateSrv.getVariables()) {
+      const values = this.expandText('$' + v.name, {}).filter((x) => x && !x.startsWith('$'));
+      if (values.some((x) => ids.has(x))) {
+        out.instances.push({ name: v.name, values: values.filter((x) => ids.has(x)) });
+      } else if (values.length > 0 && values.every((x) => props.has(x))) {
+        out.properties.push({ name: v.name, values });
+      }
+    }
+    return out;
+  }
+
+  /** Whether the current dashboard has variables (none in Explore). */
+  hasDashboardVariables(): boolean {
+    return this.templateSrv.getVariables().length > 0;
+  }
+
+  /** The picks with their variables replaced by the current values, as the query will run them. */
+  resolvePicks(picks: HistoryPick[]): HistoryPick[] {
+    return picks.flatMap((p) => this.expandPick(p, {}));
   }
 
   /** Dashboard variables for "Edit as Cypher": their current values and whether they hold several. */

@@ -293,7 +293,7 @@
       "id": 11,
       "type": "state-timeline",
       "title": "Status: job, program and alarm on $machines",
-      "description": "Data > Trend, Raw, of JobNumber, Program and AlarmActive on $machines-Production. A Selection variable picks every CNCMachine.",
+      "description": "Data > Trend, Raw, of JobNumber, Program and AlarmActive of every CNCProduction under $machines (picked in the Select modal under the $machines variable).",
       "datasource": {
         "type": "flowsoftware-atlas-datasource",
         "uid": "atlas-dev"
@@ -315,15 +315,21 @@
           "aggregation": "raw",
           "selection": [
             {
-              "instance": "$machines-Production",
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
               "property": "JobNumber"
             },
             {
-              "instance": "$machines-Production",
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
               "property": "Program"
             },
             {
-              "instance": "$machines-Production",
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
               "property": "AlarmActive"
             }
           ]
@@ -435,7 +441,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "$prop on $machines (Auto: time-weighted, keeps stops and spikes)",
-      "description": "Selection $machines-Production/$prop: both variables come from Selection variables.",
+      "description": "Picked in the Select modal: $machines > Production > $prop.",
       "datasource": {
         "type": "flowsoftware-atlas-datasource",
         "uid": "atlas-dev"
@@ -456,7 +462,9 @@
           "queryType": "history",
           "selection": [
             {
-              "instance": "$machines-Production",
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
               "property": "$prop"
             }
           ]
@@ -507,7 +515,9 @@
           "aggregation": "hour",
           "selection": [
             {
-              "instance": "$machines-Production",
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
               "property": "FeedRate"
             }
           ]

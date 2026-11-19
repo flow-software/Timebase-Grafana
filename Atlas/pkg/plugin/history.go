@@ -88,6 +88,9 @@ type historyPick struct {
 	// nested under it; "type" every instance of Type. Nested and type picks
 	// are resolved when the query runs, so they follow changes in Atlas.
 	Scope string `json:"scope,omitempty"`
+	// NestedType: scope "nested" only; read only the nested instances of
+	// this entity type ("$machines", nested, CNCProduction).
+	NestedType string `json:"nestedType,omitempty"`
 }
 
 const (
@@ -137,6 +140,15 @@ func (d *Datasource) expandPicks(ctx context.Context, branch, domain string, pic
 				continue
 			}
 			ids = descendants(tree, id)
+			if nt := shortName(strings.TrimSpace(p.NestedType)); nt != "" {
+				var only []string
+				for _, d := range ids {
+					if byID[d].Type == nt {
+						only = append(only, d)
+					}
+				}
+				ids = only
+			}
 		case pickType:
 			typ := shortName(strings.TrimSpace(p.Type))
 			for _, n := range tree {

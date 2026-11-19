@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { css } from '@emotion/css';
 import { colorManipulator, GrafanaTheme2 } from '@grafana/data';
-import { Button, Icon, IconButton, Input, Stack, useStyles2 } from '@grafana/ui';
+import { Button, Dropdown, Icon, IconButton, Input, Menu, Stack, useStyles2 } from '@grafana/ui';
 
 import { DataSource } from '../datasource';
-import { HistoryPick, TreeNodeData } from '../types';
+import { ancestorsOf, shortType } from '../tree';
+import { HistoryPick, SelectionVariables, TreeNodeData } from '../types';
 import { HistoryBrowser } from './HistoryBrowser';
 import { timebase } from './timebase';
 
@@ -61,8 +62,30 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
     setText('');
   };
 
+  // With dashboard variables, the tree is loaded up front so chips can offer them.
+  const hasVars = datasource.hasDashboardVariables();
+  useEffect(() => {
+    if (!hasVars || !domain) {
+      return;
+    }
+    const key = `${branch}/${domain}`;
+    let live = true;
+    datasource
+      .getTree(branch, domain)
+      .then((nodes) => live && setTree((t) => (t?.key === key && t.nodes ? t : { key, nodes, loading: false })))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [datasource, hasVars, branch, domain]);
+
   const current = tree?.key === worldKey ? tree : undefined;
+  const variables = current?.nodes && hasVars ? datasource.selectionVariables(current.nodes) : undefined;
   const shown = all ? value : value.slice(0, MAX_CHIPS);
+  const replaceAt = (i: number, pick: HistoryPick) => {
+    const rest = value.filter((_, j) => j !== i);
+    onChange(rest.some((q) => samePick(q, pick)) ? rest : value.map((q, j) => (j === i ? pick : q)));
+  };
 
   return (
     <div className={styles.field}>
@@ -103,6 +126,13 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
                   <Icon name="layer-group" size="xs" className={styles.scopeIcon} />
                   <span className={styles.instance}>every {p.type}</span>
                 </>
+              ) : p.scope === 'nested' && p.nestedType ? (
+                <>
+                  <Icon name="sitemap" size="xs" className={styles.scopeIcon} />
+                  <span className={styles.instance}>
+                    every {shortType(p.nestedType)} under {p.instance}
+                  </span>
+                </>
               ) : (
                 <>
                   {p.scope === 'nested' && <Icon name="sitemap" size="xs" className={styles.scopeIcon} />}
@@ -111,7 +141,13 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
                 </>
               )}
               <span className={styles.prop}>{p.property ?? 'all live values'}</span>
-              {p.scope !== 'type' && (
+              {variables && (
+                <VariableSuggestions
+                  options={suggestions(p, current?.nodes ?? [], variables)}
+                  onPick={(pick) => replaceAt(i, pick)}
+                />
+              )}
+              {p.scope !== 'type' && !p.nestedType && (
                 <IconButton
                   name="sitemap"
                   size="xs"
@@ -156,6 +192,8 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
         }}
         onRefresh={() => load(true)}
         onDismiss={() => setOpen(false)}
+        variables={variables}
+        resolve={(picks) => datasource.resolvePicks(picks)}
       />
     </div>
   );
@@ -189,7 +227,70 @@ function samePick(a: HistoryPick, b: HistoryPick): boolean {
     a.instance === b.instance &&
     a.property === b.property &&
     (a.scope ?? '') === (b.scope ?? '') &&
+    (a.nestedType ?? '') === (b.nestedType ?? '') &&
     (a.scope !== 'type' || a.type === b.type)
+  );
+}
+
+export interface Suggestion {
+  label: string;
+  pick: HistoryPick;
+}
+
+/**
+ * Dashboard variables that could stand in a pick: an instance that is one of
+ * an instance variable's values ("Use $machine instead of CNC01"), an
+ * instance nested under one ("Use every CNCProduction under $machine"), or a
+ * property that is one of a property variable's values.
+ */
+export function suggestions(p: HistoryPick, nodes: TreeNodeData[], vars: SelectionVariables): Suggestion[] {
+  const out: Suggestion[] = [];
+  const { type: _type, ...rest } = p;
+  if (p.scope !== 'type' && !p.instance.includes('$')) {
+    const node = nodes.find((n) => n.id === p.instance);
+    const above = ancestorsOf(nodes, p.instance);
+    for (const v of vars.instances) {
+      if (v.values.includes(p.instance)) {
+        out.push({ label: `Use $${v.name} instead of ${p.instance}`, pick: { ...rest, instance: '$' + v.name } });
+      } else if (!p.scope && node && above.some((a) => v.values.includes(a))) {
+        out.push({
+          label: `Use every ${node.type} under $${v.name}`,
+          pick: {
+            instance: '$' + v.name,
+            scope: 'nested',
+            nestedType: node.type,
+            ...(p.property ? { property: p.property } : {}),
+          },
+        });
+      }
+    }
+  }
+  if (p.property && !p.property.includes('$')) {
+    for (const v of vars.properties) {
+      if (v.values.includes(p.property)) {
+        out.push({ label: `Use $${v.name} instead of ${p.property}`, pick: { ...p, property: '$' + v.name } });
+      }
+    }
+  }
+  return out;
+}
+
+function VariableSuggestions({ options, onPick }: { options: Suggestion[]; onPick: (p: HistoryPick) => void }) {
+  if (options.length === 0) {
+    return null;
+  }
+  return (
+    <Dropdown
+      overlay={
+        <Menu>
+          {options.map((o) => (
+            <Menu.Item key={o.label} label={o.label} icon="dollar-alt" onClick={() => onPick(o.pick)} />
+          ))}
+        </Menu>
+      }
+    >
+      <IconButton name="dollar-alt" size="xs" tooltip="Use a dashboard variable here" />
+    </Dropdown>
   );
 }
 
@@ -197,6 +298,9 @@ function chipTitle(p: HistoryPick): string {
   const what = p.property ?? 'every live value';
   if (p.scope === 'type') {
     return `Every ${p.type} (including instances added later): ${what}`;
+  }
+  if (p.scope === 'nested' && p.nestedType) {
+    return `Every ${shortType(p.nestedType)} nested under ${p.instance} (including instances added later): ${what}`;
   }
   if (p.scope === 'nested') {
     return `${p.instance} and everything nested under it (including instances added later): ${what}`;
