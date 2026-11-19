@@ -46,11 +46,20 @@ func (f *fakeAtlas) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.queries = append(f.queries, body)
 		text, _ := body["cypher"].(string)
-		for k, v := range f.cypher {
-			if strings.Contains(text, k) {
-				_, _ = io.WriteString(w, v)
-				return
+		// A key matches when every "&&" part is in the query; the longest key wins.
+		best, found := "", false
+		for k := range f.cypher {
+			all := true
+			for _, part := range strings.Split(k, "&&") {
+				all = all && strings.Contains(text, part)
 			}
+			if all && (!found || len(k) > len(best)) {
+				best, found = k, true
+			}
+		}
+		if found {
+			_, _ = io.WriteString(w, f.cypher[best])
+			return
 		}
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -530,37 +539,77 @@ func TestHistoryRawUsesTypedMatchAndParameters(t *testing.T) {
 	}
 }
 
-func TestHistoryHourAveragesWithMinMax(t *testing.T) {
+func TestHistoryHourIsTimeWeighted(t *testing.T) {
+	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	from := to.Add(-7 * 24 * time.Hour)
+	at := func(d time.Duration) string { return from.Add(d).Format(time.RFC3339) }
+	// Atlas's raw read starts with the value before the window (10), which
+	// holds for the first 30 minutes; then 20 holds to the end.
 	f := &fakeAtlas{cypher: map[string]string{
-		"IN $ids RETURN n": `{"columns":["n"],"data":[[` + prodNode + `]]}`,
-		"relative(":        `{"columns":["id","t","avg","min","max","n"],"data":[["CNC02-Production","2026-11-17T00:00:00Z",10,5,15,3600]]}`,
-		"AS value":         `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","2026-11-17T00:00:00Z","JOB-1",192]]}`,
+		"IN $ids RETURN n":          `{"columns":["n"],"data":[[` + prodNode + `]]}`,
+		"relative(":                 `{"columns":["id","t","avg","min","max","n"],"data":[["CNC02-Production","` + at(0) + `",20,20,20,1]]}`,
+		"n.FeedRate AS v&&AS value": `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","` + at(-time.Hour) + `",10,192],["CNC02-Production","` + at(30*time.Minute) + `",20,192]]}`,
+		"AS value":                  `{"columns":["id","t","value","quality"],"data":[["CNC02-Production","2026-11-17T00:00:00Z","JOB-1",192]]}`,
 	}}
 	ds := newTestDS(t, f, noAuth)
-	to := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
-	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"],"aggregation":"hour","includeMinMax":true}`, to.Add(-7*24*time.Hour), to)
+	r := runRange(t, ds, `{"queryType":"history","instanceId":"CNC02-Production","properties":["FeedRate","JobNumber"],"aggregation":"hour","includeMinMax":true}`, from, to)
 	if r.Error != nil {
 		t.Fatal(r.Error)
 	}
-	var sawHour, sawTextRaw bool
+	var sawTextRaw bool
 	for _, q := range f.queries {
 		cy := q["cypher"].(string)
-		if strings.Contains(cy, "UNWIND n.FeedRate") && strings.Contains(cy, `relative(v.Timestamp, "h")`) {
-			sawHour = true
-		}
 		if strings.Contains(cy, "UNWIND n.JobNumber") && strings.Contains(cy, "AS value") {
 			sawTextRaw = true
 		}
 	}
-	if !sawHour || !sawTextRaw {
-		t.Fatalf("Hour should bucket FeedRate by hour and read text JobNumber raw (hour %v, text raw %v)", sawHour, sawTextRaw)
+	if !sawTextRaw {
+		t.Fatal("text JobNumber must be read raw")
 	}
-	for _, fr := range r.Frames {
-		if fr.Name == "CNC02-Production FeedRate" {
-			if _, i := fr.FieldByName("Max"); i < 0 {
-				t.Fatal("min/max requested but missing")
-			}
+	var fr *data.Frame
+	for _, x := range r.Frames {
+		if x.Name == "CNC02-Production FeedRate" {
+			fr = x
 		}
+	}
+	if fr == nil || fr.Rows() != 7*24 {
+		t.Fatalf("want one row per hour, got %v", fr)
+	}
+	_, mi := fr.FieldByName("Min")
+	_, ma := fr.FieldByName("Max")
+	if mi < 0 || ma < 0 {
+		t.Fatal("min/max requested but missing")
+	}
+	first, _ := fr.Fields[1].ConcreteAt(0)
+	lo, _ := fr.Fields[mi].ConcreteAt(0)
+	hi, _ := fr.Fields[ma].ConcreteAt(0)
+	second, _ := fr.Fields[1].ConcreteAt(1)
+	if first != 15.0 || lo != 10.0 || hi != 20.0 || second != 20.0 {
+		t.Fatalf("first hour avg %v min %v max %v, second hour %v; want 15, 10, 20 and 20", first, lo, hi, second)
+	}
+}
+
+func TestTimeWeighedAverages(t *testing.T) {
+	t0 := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	s := func(d time.Duration, v float64) sample {
+		ts := t0.Add(d)
+		return sample{t: ts, avg: v, lo: v, hi: v, loT: ts, hiT: ts, n: 1}
+	}
+	end := t0.Add(2 * time.Hour)
+	// 100 held for 50 minutes, then 0: 83.3, where the plain mean is 50.
+	ws := timeWeigh([]sample{s(-time.Hour, 100), s(50*time.Minute, 0)}, t0, time.Hour, 1, t0.Add(time.Hour), end)
+	if got := ws[0].avg(); got < 83.33 || got > 83.34 {
+		t.Fatalf("held value: avg %v, want 83.33", got)
+	}
+	// A null leaves its time out: 10 for 30 min, unknown 15 min, 20 for 15 min.
+	ws = timeWeigh([]sample{s(0, 10), {t: t0.Add(30 * time.Minute), null: true}, s(45*time.Minute, 20)}, t0, time.Hour, 1, t0.Add(time.Hour), end)
+	if got := ws[0].avg(); got < 13.33 || got > 13.34 || ws[0].cov != 45*time.Minute {
+		t.Fatalf("null gap: avg %v over %v, want 13.33 over 45m", got, ws[0].cov)
+	}
+	// The last value holds only until end (now), not to the end of the range.
+	ws = timeWeigh([]sample{s(0, 10)}, t0, time.Hour, 2, t0.Add(2*time.Hour), t0.Add(90*time.Minute))
+	if ws[1].cov != 30*time.Minute {
+		t.Fatalf("held past now: %v", ws[1].cov)
 	}
 }
 
@@ -604,7 +653,7 @@ func TestHistoryAutoKeepsPeaksInOneLine(t *testing.T) {
 	}
 	lo, hi := 1e9, -1e9
 	for i := 0; i < v.Len(); i++ {
-		x := v.At(i).(float64)
+		x := *v.At(i).(*float64)
 		lo, hi = min(lo, x), max(hi, x)
 	}
 	if lo != 0 || hi != 99 {
@@ -623,11 +672,12 @@ func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
 		ts := t0.Add(time.Duration(i) * time.Second)
 		ss = append(ss, sample{t: ts, avg: v, lo: v, hi: v, loT: ts, hiT: ts, n: 1})
 	}
-	few := peakLine(append([]sample(nil), ss[:10]...), t0, t0.Add(3000*time.Second), 20, true)
+	end := t0.Add(3000 * time.Second)
+	few := peakLine(append([]sample(nil), ss[:10]...), t0, end, end, 20, true)
 	if len(few) != 10 {
 		t.Fatalf("raw values that fit must pass through, got %d", len(few))
 	}
-	got := peakLine(ss, t0, t0.Add(3000*time.Second), 300, true)
+	got := peakLine(ss, t0, end, end, 300, true)
 	if len(got) > 300 {
 		t.Fatalf("%d points", len(got))
 	}
@@ -636,10 +686,13 @@ func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
 		if i > 0 && p.t.Before(got[i-1].t) {
 			t.Fatal("points must stay in time order")
 		}
-		if p.v == 0 {
+		if p.v == nil {
+			t.Fatal("no gaps in this data")
+		}
+		if *p.v == 0 {
 			sawStop = true
-		} else if p.v == 100 || p.v == 110 {
-			t.Fatalf("noise should be averaged, got %v", p.v)
+		} else if *p.v == 100 || *p.v == 110 {
+			t.Fatalf("noise should be averaged, got %v", *p.v)
 		}
 	}
 	if !sawStop {

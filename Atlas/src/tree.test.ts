@@ -1,4 +1,4 @@
-import { ancestorsOf, buildTree, filterTree, liveDescendants, pickTree } from './tree';
+import { ancestorsOf, buildTree, filterTree, liveDescendants, pickTree, variableValues } from './tree';
 import { TreeNodeData } from './types';
 
 const nodes: TreeNodeData[] = [
@@ -78,5 +78,57 @@ describe('pickTree', () => {
   it('lists nested instances with live values', () => {
     const { roots } = pickTree(buildTree(live), '', false);
     expect(liveDescendants(roots[0])).toEqual(['CNC01-Production']);
+  });
+});
+
+describe('variableValues', () => {
+  const world: TreeNodeData[] = [
+    { id: 'CNC01', label: 'Mill 1', type: 'CNCMachine' },
+    { id: 'CNC02', type: 'CNCMachine' },
+    {
+      id: 'CNC01-Production',
+      type: 'CNCProduction',
+      parentId: 'CNC01',
+      live: [
+        { name: 'FeedRate', kind: 'number' },
+        { name: 'JobNumber', kind: 'text' },
+      ],
+    },
+  ];
+
+  it('gives every instance of a type, named, with ids as values', () => {
+    const v = variableValues(
+      { refId: 'v', queryType: 'variable', selection: [{ instance: '', type: 'CNCMachine', scope: 'type' }] },
+      world
+    );
+    expect(v).toEqual({ text: ['Mill 1', 'CNC02'], value: ['CNC01', 'CNC02'] });
+  });
+
+  it('shows the id where names repeat', () => {
+    const twins: TreeNodeData[] = [
+      { id: 'CNC01-Production', label: 'Production', type: 'CNCProduction' },
+      { id: 'CNC02-Production', label: 'Production', type: 'CNCProduction' },
+    ];
+    const v = variableValues(
+      { refId: 'v', queryType: 'variable', selection: [{ instance: '', type: 'CNCProduction', scope: 'type' }] },
+      twins
+    );
+    expect(v.text).toEqual(['CNC01-Production', 'CNC02-Production']);
+  });
+
+  it('gives the property names of the picks, sorted, once each', () => {
+    const v = variableValues(
+      {
+        refId: 'v',
+        queryType: 'variable',
+        returns: 'properties',
+        selection: [
+          { instance: 'CNC01', scope: 'nested' },
+          { instance: 'CNC01-Production', property: 'FeedRate' },
+        ],
+      },
+      world
+    );
+    expect(v.value).toEqual(['FeedRate', 'JobNumber']);
   });
 });

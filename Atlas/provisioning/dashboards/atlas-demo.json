@@ -288,29 +288,346 @@
       ],
       "title": "History via Cypher ($from/$to from the time picker)",
       "type": "timeseries"
+    },
+    {
+      "id": 11,
+      "type": "state-timeline",
+      "title": "Status: job, program and alarm on $machines",
+      "description": "Data > Trend, Raw, of JobNumber, Program and AlarmActive on $machines-Production. A Selection variable picks every CNCMachine.",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "history",
+          "aggregation": "raw",
+          "selection": [
+            {
+              "instance": "$machines-Production",
+              "property": "JobNumber"
+            },
+            {
+              "instance": "$machines-Production",
+              "property": "Program"
+            },
+            {
+              "instance": "$machines-Production",
+              "property": "AlarmActive"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "center",
+        "rowHeight": 0.85,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 75,
+            "lineWidth": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*AlarmActive"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "Alarm",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Program"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "Program 1",
+                        "color": "#31AEE4",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "Program 2",
+                        "color": "#34D399",
+                        "index": 2
+                      },
+                      "3": {
+                        "text": "Program 3",
+                        "color": "#F59E0B",
+                        "index": 3
+                      },
+                      "4": {
+                        "text": "Program 4",
+                        "color": "#4CD6F5",
+                        "index": 4
+                      },
+                      "5": {
+                        "text": "Program 5",
+                        "color": "#1B81AD",
+                        "index": 5
+                      },
+                      "6": {
+                        "text": "Program 6",
+                        "color": "#06624E",
+                        "index": 6
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "$prop on $machines (Auto: time-weighted, keeps stops and spikes)",
+      "description": "Selection $machines-Production/$prop: both variables come from Selection variables.",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 97
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "history",
+          "selection": [
+            {
+              "instance": "$machines-Production",
+              "property": "$prop"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Hourly FeedRate on $machines, time-weighted",
+      "description": "Hour buckets. Each value counts for as long as it held, so an hour the machine spent stopped averages low even when the stop was recorded only once.",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 97
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "history",
+          "aggregation": "hour",
+          "selection": [
+            {
+              "instance": "$machines-Production",
+              "property": "FeedRate"
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "schemaVersion": 39,
   "templating": {
     "list": [
       {
-        "current": {
-          "text": "CNC02",
-          "value": "CNC02"
-        },
         "datasource": {
           "type": "flowsoftware-atlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "machine",
-        "query": {
-          "cypher": "MATCH (m:CNCMachine) RETURN m.entityId",
-          "format": "table",
-          "queryType": "cypher",
-          "refId": "V"
-        },
+        "label": "Machine",
+        "type": "query",
         "refresh": 1,
-        "type": "query"
+        "query": {
+          "refId": "V",
+          "queryType": "variable",
+          "returns": "instances",
+          "selection": [
+            {
+              "instance": "",
+              "type": "CNCMachine",
+              "scope": "type"
+            }
+          ]
+        },
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "text": "CNC02",
+          "value": "CNC02"
+        }
+      },
+      {
+        "datasource": {
+          "type": "flowsoftware-atlas-datasource",
+          "uid": "atlas-dev"
+        },
+        "name": "machines",
+        "label": "Machines",
+        "type": "query",
+        "refresh": 1,
+        "query": {
+          "refId": "V",
+          "queryType": "variable",
+          "returns": "instances",
+          "selection": [
+            {
+              "instance": "",
+              "type": "CNCMachine",
+              "scope": "type"
+            }
+          ]
+        },
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "datasource": {
+          "type": "flowsoftware-atlas-datasource",
+          "uid": "atlas-dev"
+        },
+        "name": "prop",
+        "label": "Property",
+        "type": "query",
+        "refresh": 1,
+        "query": {
+          "refId": "V",
+          "queryType": "variable",
+          "returns": "properties",
+          "selection": [
+            {
+              "instance": "",
+              "type": "CNCProduction",
+              "scope": "type"
+            }
+          ]
+        },
+        "multi": true,
+        "includeAll": false,
+        "current": {
+          "text": [
+            "FeedRate"
+          ],
+          "value": [
+            "FeedRate"
+          ]
+        }
       }
     ]
   },

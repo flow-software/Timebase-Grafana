@@ -8,8 +8,12 @@ import { DataQuery } from '@grafana/schema';
  * history: the Data tab's Trend mode: stored values of the selection over the time range.
  * cypher: a read-only Cypher query written by the user.
  * instances: saved by older versions; read as values with scope "type".
+ * variable: a dashboard variable from a selection (resolved in the browser).
  */
-export type AtlasQueryType = 'graph' | 'values' | 'history' | 'cypher' | 'instances';
+export type AtlasQueryType = 'graph' | 'values' | 'history' | 'cypher' | 'instances' | 'variable';
+
+/** Selection variables: give the picked instances' ids, or the names of the picked properties. */
+export type VariableReturns = 'instances' | 'properties';
 
 /** History: raw points, or minute / hour / day buckets. Auto picks from the panel's time range. */
 export type Aggregation = 'auto' | 'raw' | 'minute' | 'hour' | 'day';
@@ -75,6 +79,8 @@ export interface AtlasQuery extends DataQuery {
   /** Filled in at query time from Grafana variables. Not edited by the user. */
   parameters?: Record<string, unknown>;
   format?: CypherFormat;
+  /** Selection variables: what the values are. */
+  returns?: VariableReturns;
 }
 
 /**

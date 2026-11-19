@@ -1,4 +1,4 @@
-import { HistoryPick, LiveProperty, TreeNodeData } from './types';
+import { AtlasQuery, HistoryPick, LiveProperty, TreeNodeData } from './types';
 
 export interface TreeItem {
   node: TreeNodeData;
@@ -206,4 +206,40 @@ export function typeGroups(nodes: TreeNodeData[], text: string): TypeGroup[] {
     out.push({ type, ids: g.ids, props });
   }
   return out.sort((a, b) => a.type.localeCompare(b.type));
+}
+
+/** The values of a Selection variable: instances (name as text, id as value) or property names. */
+export function variableValues(q: AtlasQuery, nodes: TreeNodeData[]): { text: string[]; value: string[] } {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const picks = expandSelection(q.selection ?? [], nodes);
+  const text: string[] = [];
+  const value: string[] = [];
+  const seen = new Set<string>();
+  const add = (t: string, v: string) => {
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      text.push(t);
+      value.push(v);
+    }
+  };
+  for (const p of picks) {
+    if (p.scope === 'type') {
+      continue; // a type that is not in the tree
+    }
+    const n = byId.get(p.instance);
+    if (q.returns === 'properties') {
+      const names = p.property ? [p.property] : (n?.live ?? []).map((l) => l.name);
+      names.forEach((name) => add(name, name));
+    } else if (n) {
+      add(nodeName(n), n.id);
+    }
+  }
+  if (q.returns === 'properties') {
+    const order = value.map((v, i) => i).sort((a, b) => value[a].localeCompare(value[b]));
+    return { text: order.map((i) => text[i]), value: order.map((i) => value[i]) };
+  }
+  // Names that repeat ("Production" on every machine) say nothing: show the id instead.
+  const count = new Map<string, number>();
+  text.forEach((t) => count.set(t, (count.get(t) ?? 0) + 1));
+  return { text: text.map((t, i) => ((count.get(t) ?? 0) > 1 ? value[i] : t)), value };
 }

@@ -1,7 +1,8 @@
-import { CoreApp, DataSourceInstanceSettings, DataSourceVariableSupport, ScopedVars } from '@grafana/data';
+import { CoreApp, DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv, TemplateSrv } from '@grafana/runtime';
 
 import { cypherParameterNames } from './cypher';
+import { AtlasVariableSupport } from './variables';
 import {
   AtlasOptions,
   AtlasQuery,
@@ -14,9 +15,6 @@ import {
   World,
 } from './types';
 
-/** Dashboard variables use the normal query editor; the first column becomes the values. */
-class AtlasVariableSupport extends DataSourceVariableSupport<DataSource> {}
-
 export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> {
   readonly defaultBranch: string;
   readonly defaultDomain: string;
@@ -28,7 +26,7 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     super(instanceSettings);
     this.defaultBranch = instanceSettings.jsonData.defaultBranch || 'main';
     this.defaultDomain = instanceSettings.jsonData.defaultDomain || '';
-    this.variables = new AtlasVariableSupport();
+    this.variables = new AtlasVariableSupport(this);
   }
 
   getDefaultQuery(_: CoreApp): Partial<AtlasQuery> {
@@ -90,6 +88,8 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         );
       case 'cypher':
         return !!query.cypher?.trim();
+      case 'variable':
+        return false; // runs in the browser, through the variable support
       default:
         return true;
     }
@@ -129,16 +129,27 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
   }
 
   /**
-   * Expands the variables in a pick's instance. When the first variable has
-   * several values, the pick becomes one pick per value, with the text around
-   * it kept: "$machine-Production" with CNC01 and CNC02 gives
-   * CNC01-Production and CNC02-Production.
+   * Expands the variables in a pick's instance and property. When the first
+   * variable in either has several values, the pick becomes one pick per
+   * value, with the text around it kept: "$machine-Production" with CNC01 and
+   * CNC02 gives CNC01-Production and CNC02-Production; "/$prop" with FeedRate
+   * and RPM gives one pick per property.
    */
   private expandPick(p: HistoryPick, scopedVars: ScopedVars): HistoryPick[] {
+    const type = p.type && this.templateSrv.replace(p.type, scopedVars);
+    return this.expandText(p.instance, scopedVars).flatMap((instance) =>
+      p.property === undefined
+        ? [{ ...p, instance, type }]
+        : this.expandText(p.property, scopedVars).map((property) => ({ ...p, instance, property, type }))
+    );
+  }
+
+  /** The text with its variables replaced; one result per value of the first multi-value variable. */
+  private expandText(text: string, scopedVars: ScopedVars): string[] {
     const srv = this.templateSrv;
-    const m = /^(.*?)(\$\{[^}]+\}|\$[A-Za-z0-9_]+|\[\[[A-Za-z0-9_]+\]\])(.*)$/.exec(p.instance);
+    const m = /^(.*?)(\$\{[^}]+\}|\$[A-Za-z0-9_]+|\[\[[A-Za-z0-9_]+\]\])(.*)$/.exec(text);
     if (!m || !srv.containsTemplate(m[2])) {
-      return [{ ...p, instance: srv.replace(p.instance, scopedVars), type: p.type && srv.replace(p.type, scopedVars) }];
+      return [srv.replace(text, scopedVars)];
     }
     const [, before, token, after] = m;
     let values: string[] = [];
@@ -148,7 +159,7 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     });
     const head = srv.replace(before, scopedVars);
     const tail = srv.replace(after, scopedVars);
-    return values.map((v) => ({ ...p, instance: head + v + tail }));
+    return values.map((v) => head + v + tail);
   }
 
   private expand(s: string): string {
