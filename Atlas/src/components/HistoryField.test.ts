@@ -2,6 +2,10 @@ import { parsePick } from './HistoryField';
 import { upgrade } from './QueryEditor';
 
 describe('parsePick', () => {
+  it('takes a $variable as the property', () => {
+    expect(parsePick('CNC01-Production/$prop')).toEqual({ instance: 'CNC01-Production', property: '$prop' });
+  });
+
   it('reads an id, or an id with a property after the last slash', () => {
     expect(parsePick(' $machine-Production ')).toEqual({ instance: '$machine-Production' });
     expect(parsePick('$machine-Production/FeedRate')).toEqual({

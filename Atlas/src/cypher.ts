@@ -175,8 +175,8 @@ export function historyCypher(q: AtlasQuery, nodes: TreeNodeData[]): { cypher?: 
   );
   const head = [
     `// History: one read per entity type and property (Atlas reads stored values only for a typed MATCH).`,
-    ...(unit === '$bucket'
-      ? ['// Cypher returns bucket averages; the History builder Auto line also keeps stops and spikes.']
+    ...(unit
+      ? ['// Cypher avg() is a plain mean; the builder time-weights its averages (and Auto keeps stops and spikes).']
       : []),
     unit === '$bucket'
       ? '// $from, $to and $bucket follow the time picker; use "m", "h" or "d" instead of $bucket for fixed buckets.'

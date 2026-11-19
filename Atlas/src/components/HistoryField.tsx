@@ -176,7 +176,7 @@ export function parsePick(text: string): HistoryPick | undefined {
   }
   let property: string | undefined;
   const i = t.lastIndexOf('/');
-  if (i > 0 && /^[A-Za-z_][A-Za-z0-9_]*$/.test(t.slice(i + 1))) {
+  if (i > 0 && /^([A-Za-z_][A-Za-z0-9_]*|\$\{?[A-Za-z0-9_]+\}?)$/.test(t.slice(i + 1))) {
     property = t.slice(i + 1);
     t = t.slice(0, i);
   }
