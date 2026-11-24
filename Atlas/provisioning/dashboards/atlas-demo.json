@@ -23,10 +23,13 @@
           "instanceId": "$machine",
           "queryType": "graph",
           "refId": "A",
-          "relationshipNodes": true
+          "relationshipNodes": true,
+          "relationships": [
+            "$rels"
+          ]
         }
       ],
-      "title": "Around $machine: quality rings, relationship names",
+      "title": "Around $machine: quality rings, relationship names (filter: $rels)",
       "type": "nodeGraph"
     },
     {
@@ -542,6 +545,171 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 14,
+      "type": "state-timeline",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "title": "Controller mode on $machines (labels from the Atlas enumeration)",
+      "description": "ControllerMode is bound to the ControllerModeEnum enumeration in Atlas. The panel sets no value mappings: the labels come from Atlas, and the values are never averaged.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 106
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "history",
+          "aggregation": "auto",
+          "selection": [
+            {
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
+              "property": "ControllerMode"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "center",
+        "rowHeight": 0.85,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 75,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "title": "Current controller mode (Value label column)",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 106
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "values",
+          "layout": "rows",
+          "selection": [
+            {
+              "instance": "$machines",
+              "scope": "nested",
+              "nestedType": "CNCProduction",
+              "property": "ControllerMode"
+            }
+          ]
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "datasource": {
+        "type": "flowsoftware-atlas-datasource",
+        "uid": "atlas-dev"
+      },
+      "title": "CNC machines now in ${mode:text}",
+      "description": "Cypher filtered by $mode, an Enumeration members variable on ControllerModeEnum: labels in the dropdown, keys sent as numbers.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 115
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "flowsoftware-atlas-datasource",
+            "uid": "atlas-dev"
+          },
+          "queryType": "cypher",
+          "format": "table",
+          "cypher": "// Machines whose controller is in one of the modes picked in $mode (an Enumeration members variable).\nMATCH (n:CNCProduction) WHERE n.ControllerMode.Value IN $mode\nRETURN n.entityId AS machine, n.ControllerMode.Value AS mode\nORDER BY machine"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mode"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "Automatic",
+                        "index": 0
+                      },
+                      "2": {
+                        "text": "Manual",
+                        "index": 1
+                      },
+                      "3": {
+                        "text": "MDI",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "schemaVersion": 39,
@@ -636,6 +804,58 @@
           ],
           "value": [
             "FeedRate"
+          ]
+        }
+      },
+      {
+        "datasource": {
+          "type": "flowsoftware-atlas-datasource",
+          "uid": "atlas-dev"
+        },
+        "name": "mode",
+        "label": "Controller mode",
+        "type": "query",
+        "refresh": 1,
+        "query": {
+          "refId": "V",
+          "queryType": "variable",
+          "returns": "enum",
+          "enumType": "ControllerModeEnum",
+          "enumKeyKind": "number"
+        },
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      },
+      {
+        "datasource": {
+          "type": "flowsoftware-atlas-datasource",
+          "uid": "atlas-dev"
+        },
+        "name": "rels",
+        "label": "Relationships",
+        "type": "query",
+        "refresh": 1,
+        "query": {
+          "refId": "V",
+          "queryType": "variable",
+          "returns": "relationships"
+        },
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
           ]
         }
       }

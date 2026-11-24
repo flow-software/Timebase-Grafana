@@ -711,6 +711,53 @@ func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
 	}
 }
 
+func TestPeakLineAveragesCarryWorstQuality(t *testing.T) {
+	t0 := time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
+	good, uncertain := int64(192), int64(64)
+	var ss []sample
+	for i := 0; i < 3000; i++ {
+		ts := t0.Add(time.Duration(i) * time.Second)
+		v := 100 + float64(i%2)*10
+		q := &good
+		if i == 10 {
+			q = &uncertain
+		}
+		ss = append(ss, sample{t: ts, avg: v, lo: v, hi: v, loT: ts, hiT: ts, n: 1, q: q})
+	}
+	end := t0.Add(3000 * time.Second)
+	got := peakLine(ss, t0, end, end, 300, true)
+	for i, p := range got {
+		if p.q == nil {
+			t.Fatalf("point %d at %v has no quality", i, p.t)
+		}
+	}
+	if *got[0].q != uncertain {
+		t.Fatalf("first slice holds an Uncertain value, got %d", *got[0].q)
+	}
+	if *got[len(got)-1].q != good {
+		t.Fatalf("last slice is all Good, got %d", *got[len(got)-1].q)
+	}
+
+	// A stop held over from an earlier slice is a low point with its quality.
+	var held []sample
+	for i := 0; i < 3000; i += 3 { // 1000 values: more than fit, so slices are averaged
+		ts := t0.Add(time.Duration(i) * time.Second)
+		v, q := 100+float64(i%2)*10, &good
+		if i > 1000 && i < 2015 { // resumes at 2016s, early in a 30s slice
+			if i > 1007 {
+				continue // stopped: the 0 holds into the slice where the run resumes
+			}
+			v, q = 0, &uncertain
+		}
+		held = append(held, sample{t: ts, avg: v, lo: v, hi: v, loT: ts, hiT: ts, n: 1, q: q})
+	}
+	for i, p := range peakLine(held, t0, end, end, 300, true) {
+		if p.v != nil && p.q == nil {
+			t.Fatalf("point %d at %v (%v) has no quality", i, p.t, *p.v)
+		}
+	}
+}
+
 func TestHistoryEmptyCurrentTextFallsBackToRaw(t *testing.T) {
 	// JobNumber's current value is empty, so it looks like a number; Atlas
 	// cannot bucket its text values (no "relative(" answer here = error).
@@ -942,5 +989,76 @@ func TestGraphAroundSeveralInstances(t *testing.T) {
 	}
 	if r.Frames[0].Rows() != 2 {
 		t.Fatalf("want both start nodes, got %d", r.Frames[0].Rows())
+	}
+}
+
+func TestGraphFollowsOnlyPickedRelationships(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{
+		"IN $ids RETURN a": `{"columns":["a"],"data":[[{"entityId":"CNC01","typeId":"urn:x:CNCMachine"}]]}`,
+		"RETURN r, b":      `{"columns":["r","b"],"data":[]}`,
+		"RETURN a, r, b":   `{"columns":["a","r","b"],"data":[]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	r := run(t, ds, `{"queryType":"graph","instanceId":"CNC01","depth":2,"relationships":["urn:x:feeds"," "]}`)
+	if r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	walk := f.queries[1]
+	if q := walk["cypher"].(string); !strings.Contains(q, "AND type(r) IN $rels RETURN r, b") {
+		t.Fatalf("walk query %q", q)
+	}
+	if rels := walk["parameters"].(map[string]any)["rels"].([]any); len(rels) != 1 || rels[0] != "urn:x:feeds" {
+		t.Fatalf("rels %v", rels)
+	}
+
+	f.queries = nil
+	if r = run(t, ds, `{"queryType":"graph","relationships":["urn:x:feeds"]}`); r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if q := f.queries[0]["cypher"].(string); !strings.Contains(q, "WHERE type(r) IN $rels RETURN a, r, b") {
+		t.Fatalf("whole-domain query %q", q)
+	}
+
+	f.queries = nil
+	if r = run(t, ds, `{"queryType":"graph","instanceId":"CNC01"}`); r.Error != nil {
+		t.Fatal(r.Error)
+	}
+	if q := f.queries[1]["cypher"].(string); strings.Contains(q, "type(r)") {
+		t.Fatalf("no filter picked, but the walk filters: %q", q)
+	}
+}
+
+func TestRelationshipCounts(t *testing.T) {
+	f := &fakeAtlas{cypher: map[string]string{
+		"RETURN type(r)": `{"columns":["t"],"data":[["urn:x:feeds"],["urn:x:feeds"],["urn:x:contains"]]}`,
+		"RETURN r, b": `{"columns":["r","b"],"data":[
+			[{"entityId":"r1","Source":"CNC01","Target":"Ch1","typeId":"urn:x:contains"},{"entityId":"Ch1"}],
+			[{"entityId":"r2","Source":"CNC01","Target":"Line","typeId":"urn:x:feeds"},{"entityId":"Line"}]]}`,
+	}}
+	ds := newTestDS(t, f, noAuth)
+	get := func(url string) map[string]int {
+		var s captureSender
+		if err := ds.CallResource(context.Background(), &backend.CallResourceRequest{Path: "relationship-counts", Method: "GET", URL: url}, &s); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]int{}
+		if err := json.Unmarshal(s.resp.Body, &out); err != nil {
+			t.Fatal(err, string(s.resp.Body))
+		}
+		return out
+	}
+	if c := get("relationship-counts?domain=x"); c["urn:x:feeds"] != 2 || c["urn:x:contains"] != 1 {
+		t.Fatalf("domain counts %v", c)
+	}
+	f.queries = nil
+	// Around CNC01, one hop: the fake answers every hop the same, so the
+	// counts only stay right if relationships are counted once.
+	if c := get("relationship-counts?domain=x&instance=CNC01&depth=2"); c["urn:x:feeds"] != 1 || c["urn:x:contains"] != 1 {
+		t.Fatalf("instance counts %v", c)
+	}
+	for _, q := range f.queries {
+		if strings.Contains(q["cypher"].(string), "type(r) IN") {
+			t.Fatalf("counts must follow every type: %q", q["cypher"])
+		}
 	}
 }

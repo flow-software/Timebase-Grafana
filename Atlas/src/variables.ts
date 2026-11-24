@@ -3,6 +3,7 @@ import { from, Observable } from 'rxjs';
 
 import type { DataSource } from './datasource';
 import { VariableQueryEditor } from './components/VariableQueryEditor';
+import { enumOptions, relationshipOptions } from './enums';
 import { variableValues } from './tree';
 import { AtlasQuery } from './types';
 
@@ -32,8 +33,12 @@ export class AtlasVariableSupport extends CustomVariableSupport<DataSource, Atla
     const resolved = this.datasource.applyTemplateVariables(q, request.scopedVars);
     const branch = resolved.branch || this.datasource.defaultBranch;
     const domain = resolved.domain || this.datasource.defaultDomain;
-    const nodes = await this.datasource.getTree(branch, domain);
-    const { text, value } = variableValues(resolved, nodes);
+    const { text, value } =
+      resolved.returns === 'enum'
+        ? enumOptions((await this.datasource.getEnums(branch, domain)).find((e) => e.name === resolved.enumType))
+        : resolved.returns === 'relationships'
+          ? relationshipOptions(await this.datasource.getRelationshipColors(branch, domain), q.relationships)
+          : variableValues(resolved, await this.datasource.getTree(branch, domain));
     return {
       data: [
         createDataFrame({

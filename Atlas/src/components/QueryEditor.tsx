@@ -16,6 +16,7 @@ import {
 import { DataSource } from '../datasource';
 import { HistoryField } from './HistoryField';
 import { InstanceField } from './InstanceField';
+import { RelationshipField } from './RelationshipField';
 import { cypherWeighting, historyCypher, toCypher, valuesCypher } from '../cypher';
 import { shortType } from '../tree';
 import {
@@ -231,6 +232,21 @@ export function QueryEditor({ query: saved, onChange, onRunQuery, datasource, da
             </InlineField>
           )}
           <LimitField query={query} onChange={update} placeholder="2000" tooltip="Most relationships to return" />
+          <InlineField
+            label="Relationships"
+            labelWidth={LABEL_WIDTH}
+            tooltip="Follow and draw only these relationship types (with Depth, the walk follows only them). Empty follows every relationship. A relationship-type dashboard variable lets viewers choose."
+          >
+            <RelationshipField
+              datasource={datasource}
+              branch={branch}
+              domain={domain}
+              value={query.relationships ?? []}
+              instanceId={query.instanceId}
+              depth={query.depth}
+              onChange={(relationships) => update({ relationships })}
+            />
+          </InlineField>
         </Stack>
       )}
 
@@ -523,7 +539,10 @@ function HistoryOptions({ query, onChange }: { query: AtlasQuery; onChange: (p: 
         </InlineField>
       )}
       {agg !== 'minute' && agg !== 'hour' && agg !== 'day' && (
-        <InlineField label="Quality" tooltip="Add the OPC quality code of each raw value as a series">
+        <InlineField
+          label="Quality"
+          tooltip="Show the OPC quality of each raw value (Good, Uncertain, Bad) in the tooltip and in tables. It is not drawn as a line."
+        >
           <InlineSwitch
             value={!!query.includeQuality}
             onChange={(e) => onChange({ includeQuality: e.currentTarget.checked })}

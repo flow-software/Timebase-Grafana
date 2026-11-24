@@ -337,3 +337,45 @@ describe('graph start variables in Edit as Cypher', () => {
     );
   });
 });
+
+describe('historyCypher with enumerations', () => {
+  it('reads an enumeration raw and says it is shown by label', () => {
+    const nodes = [
+      {
+        id: 'CNC01-Production',
+        type: 'CNCProduction',
+        live: [
+          {
+            name: 'MachineState',
+            kind: 'number' as const,
+            enum: {
+              name: 'MachineStateEnum',
+              label: 'Machine State',
+              members: [
+                { key: '1', label: 'Running' },
+                { key: '2', label: 'Stopped' },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const { cypher } = historyCypher(
+      { refId: 'A', queryType: 'history', selection: [{ instance: 'CNC01-Production', property: 'MachineState' }] },
+      nodes
+    );
+    expect(cypher).toContain('v.Timestamp AS time, v.Value AS value');
+    expect(cypher).toContain('never time-weighted: MachineState (Machine State)');
+  });
+});
+
+describe('graph relationship filter in Edit as Cypher', () => {
+  const multi = { values: (t: string) => [t], isMulti: () => true };
+  it('filters on picked types and keeps a type variable', () => {
+    const one = toCypher({ refId: 'A', queryType: 'graph', instanceId: 'CNC01', relationships: ['urn:x:feeds'] });
+    expect(one).toContain('WHERE a.entityId = "CNC01" AND type(r) IN ["urn:x:feeds"]');
+    const whole = toCypher({ refId: 'A', queryType: 'graph', relationships: ['urn:x:feeds', '$rels'] }, multi);
+    expect(whole).toContain('WHERE type(r) IN ["urn:x:feeds"] + $rels');
+    expect(toCypher({ refId: 'A', queryType: 'graph' })).not.toContain('type(r)');
+  });
+});

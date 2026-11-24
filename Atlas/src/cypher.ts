@@ -46,8 +46,9 @@ export function toCypher(q: AtlasQuery, vars: CypherVars = NO_VARS): string | un
   switch (q.queryType ?? 'graph') {
     case 'graph': {
       const limit = q.limit && q.limit > 0 ? q.limit : 2000;
+      const rels = relationshipFilter(q.relationships, vars);
       if (!q.instanceId) {
-        return `MATCH (a)-[r]->(b)\nRETURN a, r, b\nLIMIT ${limit}`;
+        return `MATCH (a)-[r]->(b)\n${rels ? `WHERE ${rels}\n` : ''}RETURN a, r, b\nLIMIT ${limit}`;
       }
       if ((q.depth ?? 1) > 1) {
         return undefined;
@@ -55,7 +56,7 @@ export function toCypher(q: AtlasQuery, vars: CypherVars = NO_VARS): string | un
       // A start variable stays a variable (several values: around all of them).
       const v = parseVar(q.instanceId);
       const where = v ? `a.entityId IN ${idListExpr(v, vars)}` : `a.entityId = ${cypherString(q.instanceId)}`;
-      return `MATCH (a)-[r]-(b)\nWHERE ${where}\nRETURN a, r, b\nLIMIT ${limit}`;
+      return `MATCH (a)-[r]-(b)\nWHERE ${where}${rels ? ` AND ${rels}` : ''}\nRETURN a, r, b\nLIMIT ${limit}`;
     }
     case 'values':
     case 'instances': {
@@ -187,6 +188,24 @@ function parseVar(text: string | undefined): VarText | undefined {
 
 function hasVar(text: string | undefined): boolean {
   return !!parseVar(text);
+}
+
+/**
+ * The Graph's relationship filter as Cypher: type(r) IN [...] for picked
+ * type URIs, + $rels for a relationship-type variable. type(r) returns the
+ * full URI (live-checked). Empty when every relationship is followed.
+ */
+function relationshipFilter(rels: string[] | undefined, vars: CypherVars): string {
+  const list = (rels ?? []).filter((r) => r.trim());
+  if (list.length === 0) {
+    return '';
+  }
+  const literal = list.filter((r) => !parseVar(r));
+  const parts = [
+    ...(literal.length ? [`[${literal.map(cypherString).join(', ')}]`] : []),
+    ...list.map(parseVar).flatMap((v) => (v && !v.before && !v.after ? [varList(v.name, vars)] : [])),
+  ];
+  return `type(r) IN ${parts.join(' + ')}`;
 }
 
 /** The variable as a Cypher list: $name, or [$name] for a single-value variable. */
@@ -337,6 +356,7 @@ export function historyCypher(
   const groups = new Map<string, ReadGroup>();
   const missing: string[] = [];
   const left: string[] = [];
+  const enums = new Set<string>();
 
   // match: the MATCH ... WHERE of a variable pick, whose instances (merged into n) only
   // contribute properties they have.
@@ -384,6 +404,9 @@ export function historyCypher(
       if (!PLOTTABLE.has(kind) || !IDENT.test(n.type) || !IDENT.test(prop)) {
         left.push(`${n.id} ${prop} (${kind})`);
         continue;
+      }
+      if (lp?.enum) {
+        enums.add(`${prop} (${lp.enum.label})`);
       }
       const g0: ReadGroup = { type: n.type, prop, ids: [], match, guard: guard?.(prop) };
       const key = [n.type, prop, match ?? '', g0.guard ?? ''].join('\u0000');
@@ -482,6 +505,9 @@ export function historyCypher(
   }
   if (left.length) {
     head.push(`// Left out, not numbers: ${left.join(', ')}`);
+  }
+  if (enums.size) {
+    head.push(`// Enumerations are shown by label and never time-weighted: ${Array.from(enums).join(', ')}.`);
   }
   if (Array.from(groups.values()).some((g) => g.part)) {
     head.push('// Record parts (e.g. LiveAsset.MxLocationId) are read raw, one value per stored version.');

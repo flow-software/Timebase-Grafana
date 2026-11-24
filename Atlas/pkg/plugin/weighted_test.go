@@ -25,7 +25,7 @@ func TestWeighSeriesHourMatchesDataView(t *testing.T) {
 	fr := cypherSeries("CNC01-SpindleMotor RPM",
 		[]time.Time{from, from.Add(50 * time.Minute)},
 		[]*float64{f(100), f(0)})
-	out := weighSeries(data.Frames{fr}, weightHour, from, to, 1000, true)
+	out := weighSeries(data.Frames{fr}, weightHour, from, to, 1000, true, nil)
 	if len(out) != 1 || len(out[0].Fields) != 4 {
 		t.Fatalf("want one frame with time, value, min, max; got %v", out)
 	}
@@ -53,7 +53,7 @@ func TestWeighSeriesAutoHoldsAStop(t *testing.T) {
 	for s := 0; s < 1800; s++ {
 		times, values = append(times, from.Add(90*time.Minute+time.Duration(s)*time.Second)), append(values, f(12000))
 	}
-	out := weighSeries(data.Frames{cypherSeries("s", times, values)}, weightAuto, from, to, 300, false)
+	out := weighSeries(data.Frames{cypherSeries("s", times, values)}, weightAuto, from, to, 300, false, nil)
 	vf := out[0].Fields[1]
 	if vf.Len() > 300 {
 		t.Fatalf("%d points, want at most 300", vf.Len())
@@ -79,7 +79,7 @@ func TestWeighSeriesAutoHoldsAStop(t *testing.T) {
 
 func TestWeighSeriesOffLeavesRows(t *testing.T) {
 	fr := cypherSeries("s", []time.Time{time.Now()}, []*float64{nil})
-	if out := weighSeries(data.Frames{fr}, "", time.Now(), time.Now(), 0, false); out[0] != fr {
+	if out := weighSeries(data.Frames{fr}, "", time.Now(), time.Now(), 0, false, nil); out[0] != fr {
 		t.Fatal("weighting off should leave the series as returned")
 	}
 	if !validWeighting("none") || validWeighting("week") {

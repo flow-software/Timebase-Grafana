@@ -28,7 +28,8 @@ func validWeighting(w string) bool {
 // weighSeries time-weights each series from splitSeries. The value is the
 // field named "value", or else the first number field; the others are
 // dropped. Every row is one stored value that holds until the next.
-func weighSeries(frames data.Frames, weighting string, from, to time.Time, maxPoints int, withMinMax bool) data.Frames {
+// keep, when set, names series to leave as returned (enumerations).
+func weighSeries(frames data.Frames, weighting string, from, to time.Time, maxPoints int, withMinMax bool, keep func(*data.Frame) bool) data.Frames {
 	if weighting == "" || weighting == "none" {
 		return frames
 	}
@@ -45,7 +46,7 @@ func weighSeries(frames data.Frames, weighting string, from, to time.Time, maxPo
 	out := make(data.Frames, 0, len(frames))
 	for _, f := range frames {
 		vf := seriesValueField(f)
-		if vf == nil || len(f.Fields) == 0 {
+		if vf == nil || len(f.Fields) == 0 || (keep != nil && keep(f)) {
 			out = append(out, f)
 			continue
 		}

@@ -6,7 +6,7 @@ import { Button, Dropdown, Icon, IconButton, Input, Menu, Stack, useStyles2 } fr
 import { DataSource } from '../datasource';
 import { ancestorsOf, shortType } from '../tree';
 import { HistoryPick, SelectionVariables, TreeNodeData } from '../types';
-import { HistoryBrowser } from './HistoryBrowser';
+import { HistoryBrowser, View } from './HistoryBrowser';
 import { timebase } from './timebase';
 
 interface Props {
@@ -15,6 +15,10 @@ interface Props {
   domain: string;
   value: HistoryPick[];
   onChange: (picks: HistoryPick[]) => void;
+  /** Instances and types only, no properties (an instance variable). */
+  instancesOnly?: boolean;
+  /** The modal's view when nothing is picked yet. */
+  defaultView?: View;
 }
 
 /** Chips shown before "+N more". */
@@ -27,7 +31,7 @@ const MAX_CHIPS = 12;
  * "type:CNCProduction/FeedRate"). A whole-instance chip can be switched to
  * include everything nested under it.
  */
-export function HistoryField({ datasource, branch, domain, value, onChange }: Props) {
+export function HistoryField({ datasource, branch, domain, value, onChange, instancesOnly, defaultView }: Props) {
   const styles = useStyles2(getStyles);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -95,9 +99,15 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
           icon="sitemap"
           onClick={openBrowser}
           disabled={!domain}
-          tooltip={domain ? 'Pick instances and properties in the tree' : 'Pick a domain first'}
+          tooltip={
+            !domain
+              ? 'Pick a domain first'
+              : instancesOnly
+                ? 'Pick instances or types in the tree'
+                : 'Pick instances and properties in the tree'
+          }
         >
-          {value.length ? 'Change selection' : 'Select instances and properties'}
+          {value.length ? 'Change selection' : instancesOnly ? 'Select instances' : 'Select instances and properties'}
         </Button>
         <Input
           width={40}
@@ -140,7 +150,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
                   {p.scope === 'nested' && <span className={styles.prop}>+ nested</span>}
                 </>
               )}
-              <span className={styles.prop}>{p.property ?? 'all live values'}</span>
+              {!instancesOnly && <span className={styles.prop}>{p.property ?? 'all live values'}</span>}
               {variables && (
                 <VariableSuggestions
                   options={suggestions(p, current?.nodes ?? [], variables)}
@@ -181,7 +191,7 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
       )}
       <HistoryBrowser
         isOpen={open}
-        title={`Instances and properties in ${domain}${branch ? ` @ ${branch}` : ''}`}
+        title={`${instancesOnly ? 'Instances' : 'Instances and properties'} in ${domain}${branch ? ` @ ${branch}` : ''}`}
         nodes={current?.nodes}
         loading={!!current?.loading}
         error={current?.error}
@@ -194,6 +204,8 @@ export function HistoryField({ datasource, branch, domain, value, onChange }: Pr
         onDismiss={() => setOpen(false)}
         variables={variables}
         resolve={(picks) => datasource.resolvePicks(picks)}
+        instancesOnly={instancesOnly}
+        defaultView={defaultView}
       />
     </div>
   );

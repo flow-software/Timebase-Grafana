@@ -217,7 +217,9 @@ export function typeGroups(nodes: TreeNodeData[], text: string): TypeGroup[] {
 /** The values of a Selection variable: instances (name as text, id as value) or property names. */
 export function variableValues(q: AtlasQuery, nodes: TreeNodeData[]): { text: string[]; value: string[] } {
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const picks = expandSelection(q.selection ?? [], nodes);
+  // An instance variable gives instances: properties in its picks play no part.
+  const selection = q.returns === 'properties' ? (q.selection ?? []) : withoutProperties(q.selection ?? []);
+  const picks = expandSelection(selection, nodes);
   const text: string[] = [];
   const value: string[] = [];
   const seen = new Set<string>();
@@ -248,4 +250,19 @@ export function variableValues(q: AtlasQuery, nodes: TreeNodeData[]): { text: st
   const count = new Map<string, number>();
   text.forEach((t) => count.set(t, (count.get(t) ?? 0) + 1));
   return { text: text.map((t, i) => ((count.get(t) ?? 0) > 1 ? value[i] : t)), value };
+}
+
+/** The picks without their properties, duplicates dropped (instance variables pick instances only). */
+export function withoutProperties(picks: HistoryPick[]): HistoryPick[] {
+  const seen = new Set<string>();
+  const out: HistoryPick[] = [];
+  for (const p of picks) {
+    const { property, ...rest } = p;
+    const key = JSON.stringify([rest.scope ?? '', rest.instance, rest.type ?? '', rest.nestedType ?? '']);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(rest);
+    }
+  }
+  return out;
 }

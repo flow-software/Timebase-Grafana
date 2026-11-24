@@ -74,6 +74,8 @@ type historyTarget struct {
 	Numeric bool              // false for text and boolean properties: never bucketed
 	Record  bool              // a compound with its own Timestamp: read raw, one column per part
 	Units   map[string]string // entityId -> Grafana unit, from the instance's UOM
+	TypeURI string            // the full entity type, for the ontology lookups
+	Enum    *EnumInfo         // bound enumeration: read raw, never averaged, shown by label
 }
 
 // historyPick is one entry of a History selection: one property of an
@@ -203,6 +205,13 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 		}
 	}
 
+	kr := d.kinds(ctx, branch, domain, false)
+	for i := range targets {
+		if e := kr.enumInfoOf(targets[i].TypeURI, targets[i].Prop); e != nil {
+			targets[i].Enum, targets[i].Numeric = e, false
+		}
+	}
+
 	agg := qm.Aggregation
 	if agg == "" || agg == aggAuto {
 		agg = aggPeak
@@ -235,6 +244,7 @@ func (d *Datasource) historyQuery(ctx context.Context, branch, domain string, qm
 				}
 			}
 			applyUnits(f, t.Units)
+			applyEnum(f, t.Enum)
 			results[i] = result{f, err, notice}
 		}(i, t)
 	}
@@ -431,7 +441,7 @@ func historyTargets(nodes []map[string]any, propsOf func(map[string]any) []strin
 			key := typ + "\x00" + p
 			t, seen := byKey[key]
 			if !seen {
-				t = &historyTarget{Type: typ, Prop: p}
+				t = &historyTarget{Type: typ, Prop: p, TypeURI: str(n["typeId"])}
 				byKey[key] = t
 				order = append(order, key)
 			}
@@ -571,7 +581,7 @@ func historyFrame(id, label, prop string, rows [][]any, qm queryModel) *data.Fra
 	vf.SetConfig(&data.FieldConfig{DisplayNameFromDS: name})
 	f := data.NewFrame(name, data.NewField("Time", nil, times), vf)
 	if qm.IncludeQuality {
-		f.Fields = append(f.Fields, data.NewField("Quality", lbl, nonNilPtr(quality)).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " quality"}))
+		f.Fields = append(f.Fields, data.NewField("Quality", lbl, nonNilPtr(quality)).SetConfig(qualityConfig(name)))
 	}
 	return f
 }
@@ -918,7 +928,20 @@ type weighed struct {
 	lo, hi   float64
 	loT, hiT time.Time
 	loQ, hiQ *int64
-	samples  int // values recorded inside the bucket
+	worstQ   *int64 // the worst quality held in the bucket (for its average)
+	samples  int    // values recorded inside the bucket
+}
+
+// qualityRank orders OPC DA quality codes by their top two bits:
+// Bad 0, Uncertain 1, Good 2 (as the Good/Uncertain/Bad mappings).
+func qualityRank(q int64) int {
+	switch q & 0xC0 {
+	case 0xC0:
+		return 2
+	case 0x40:
+		return 1
+	}
+	return 0
 }
 
 func (w weighed) avg() float64 { return w.sum / w.cov.Seconds() }
@@ -974,8 +997,9 @@ func timeWeigh(ss []sample, start time.Time, size time.Duration, n int, stop, en
 			w := &out[k]
 			dur := y.Sub(x)
 			// Extremes: where the value was recorded in this bucket, its own;
-			// where it is only held over from before, the held value.
-			lo, loT, hi, hiT, q := s.avg, x, s.avg, x, (*int64)(nil)
+			// where it is only held over from before, the held value, which
+			// keeps its quality.
+			lo, loT, hi, hiT, q := s.avg, x, s.avg, x, s.q
 			if !s.t.Before(ba) && s.t.Before(bb) {
 				lo, loT, hi, hiT, q = s.lo, s.loT, s.hi, s.hiT, s.q
 				w.samples++
@@ -990,6 +1014,9 @@ func timeWeigh(ss []sample, start time.Time, size time.Duration, n int, stop, en
 				if hi > w.hi {
 					w.hi, w.hiT, w.hiQ = hi, hiT, q
 				}
+			}
+			if s.q != nil && (w.worstQ == nil || qualityRank(*s.q) < qualityRank(*w.worstQ)) {
+				w.worstQ = s.q
 			}
 			w.sum += s.avg * dur.Seconds()
 			w.cov += dur
@@ -1122,7 +1149,9 @@ func peakLine(ss []sample, from, to, end time.Time, maxPoints int, raw bool) []p
 			continue
 		}
 		avg := w.avg()
-		pts := []point{{t: w.a.Add(w.b.Sub(w.a) / 2), v: &avg}}
+		// The average stands for the whole slice, so it carries the worst
+		// quality held in it: one Bad value is not hidden behind Good ones.
+		pts := []point{{t: w.a.Add(w.b.Sub(w.a) / 2), v: &avg, q: w.worstQ}}
 		if avg-w.lo > typical {
 			lo := w.lo
 			pts = append(pts, point{t: w.loT, v: &lo, q: w.loQ})
@@ -1155,7 +1184,40 @@ func peakFrame(id, label, prop string, pts []point, withQuality bool) *data.Fram
 		data.NewField("Value", lbl, values).SetConfig(&data.FieldConfig{DisplayNameFromDS: name}),
 	)
 	if withQuality {
-		f.Fields = append(f.Fields, data.NewField("Quality", lbl, quality).SetConfig(&data.FieldConfig{DisplayNameFromDS: name + " quality"}))
+		f.Fields = append(f.Fields, data.NewField("Quality", lbl, quality).SetConfig(qualityConfig(name)))
 	}
 	return f
+}
+
+// qualityConfig keeps a trend's quality code with its series without drawing
+// it: a line of 192s is no use and stretches the value axis. The code shows in
+// the tooltip and as a table column, named by its top two bits (OPC DA, as
+// qualityText): Good, Uncertain, Bad.
+func qualityConfig(name string) *data.FieldConfig {
+	band := func(from, to data.ConfFloat64, text, color string, i int) data.RangeValueMapper {
+		return data.RangeValueMapper{From: &from, To: &to, Result: data.ValueMappingResult{Text: text, Color: color, Index: i}}
+	}
+	lo, hi := data.ConfFloat64(0), data.ConfFloat64(255)
+	return &data.FieldConfig{
+		DisplayNameFromDS: name + " quality",
+		// Not hideFrom.viz: tables honour that too and would drop the column.
+		// Instead an invisible line on its own hidden 0-255 scale (a fixed
+		// min/max gives it a scale of its own, so the value axis keeps its range).
+		Min: &lo,
+		Max: &hi,
+		Custom: map[string]any{
+			"hideFrom":      map[string]any{"viz": false, "legend": true, "tooltip": false},
+			"lineWidth":     0,
+			"fillOpacity":   0,
+			"showPoints":    "never",
+			"pointSize":     1,
+			"axisPlacement": "hidden",
+		},
+		Mappings: data.ValueMappings{
+			band(192, 255, "Good", "green", 0),
+			band(64, 127, "Uncertain", "yellow", 1),
+			band(0, 63, "Bad", "red", 2),
+			band(128, 191, "Bad", "red", 3),
+		},
+	}
 }

@@ -25,6 +25,10 @@ interface Props {
   metaOf?: (n: TreeNodeData) => string;
   /** What the pickable rows are called in the count, e.g. "types". */
   noun?: string;
+  /** What is loaded, for the loading and error text. Default "instances". */
+  what?: string;
+  /** The filter box's placeholder. */
+  filterPlaceholder?: string;
   /** Dashboard variables whose values are instances; picking one gives "$name". */
   variables?: SelectionVariable[];
 }
@@ -53,6 +57,8 @@ function BrowserBody({
   canSelect = () => true,
   metaOf = defaultMeta,
   noun = 'instances',
+  what = 'instances',
+  filterPlaceholder = 'Filter by name, id or type',
   variables = [],
 }: Props) {
   const styles = useStyles2(getStyles);
@@ -164,7 +170,7 @@ function BrowserBody({
         <Input
           autoFocus
           prefix={<Icon name="search" />}
-          placeholder="Filter by name, id or type"
+          placeholder={filterPlaceholder}
           value={filter}
           onChange={(e) => setFilter(e.currentTarget.value)}
         />
@@ -172,11 +178,11 @@ function BrowserBody({
       </div>
 
       {error && (
-        <Alert severity="error" title="Could not load the instances">
+        <Alert severity="error" title={`Could not load the ${what}`}>
           {error}
         </Alert>
       )}
-      {loading && !nodes && <LoadingPlaceholder text="Loading instances…" />}
+      {loading && !nodes && <LoadingPlaceholder text={`Loading ${what}…`} />}
 
       {nodes && (
         <>
