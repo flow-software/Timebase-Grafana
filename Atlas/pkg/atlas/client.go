@@ -154,11 +154,15 @@ type EntityProperty struct {
 	URI           string         `json:"uri"`
 	Range         string         `json:"range"`
 	CompoundRange *CompoundRange `json:"compoundRange"`
+	// EnumType: the enumeration type of a plain (non-compound) property.
+	EnumType string `json:"enumType"`
 }
 
 type CompoundRange struct {
 	BaseCompoundURI    string            `json:"baseCompoundUri"`
 	FieldTypeOverrides map[string]string `json:"fieldTypeOverrides"`
+	// FieldEnumOverrides: the enumeration type of a field ("Value" on a TVQ).
+	FieldEnumOverrides map[string]string `json:"fieldEnumOverrides"`
 }
 
 // EntityPropertyPin fixes an open field type (e.g. TVQ Value) of a property
@@ -166,6 +170,33 @@ type CompoundRange struct {
 type EntityPropertyPin struct {
 	PropertyURI        string            `json:"propertyUri"`
 	FieldTypeOverrides map[string]string `json:"fieldTypeOverrides"`
+	FieldEnumOverrides map[string]string `json:"fieldEnumOverrides"`
+}
+
+// EnumType is an enumeration type (Atlas ADR 030): a closed set of keys,
+// each with a code-safe name and an optional display label. Keys are the
+// lexical form of the stored value ("2", "true", "Running").
+type EnumType struct {
+	URI     string       `json:"uri"`
+	Label   string       `json:"label"`
+	KeyType string       `json:"keyType"`
+	Members []EnumMember `json:"members"`
+}
+
+type EnumMember struct {
+	Key   string `json:"key"`
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
+
+// EnumTypes lists the enumeration types of a domain. An Atlas without
+// enumeration types answers 404.
+func (c *Client) EnumTypes(ctx context.Context, branch, domain string) ([]EnumType, error) {
+	var out []EnumType
+	if err := c.do(ctx, http.MethodGet, worldPath(branch, domain)+"/enum-types", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // EntityTypes lists the entity types of a domain, with their properties.

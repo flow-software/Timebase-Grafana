@@ -150,6 +150,10 @@ type queryModel struct {
 	Aggregation   string   `json:"aggregation"`
 	IncludeMinMax bool     `json:"includeMinMax"`
 
+	// Graph: the relationship types to follow and draw (full URIs, as
+	// type(r) returns them). Empty follows every relationship.
+	Relationships []string `json:"relationships"`
+
 	// Graph and Cypher graph output.
 	ColorBy           string `json:"colorBy"`
 	RelationshipNodes bool   `json:"relationshipNodes"`
@@ -250,8 +254,19 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 	g := newGraph()
 	id := strings.TrimSpace(qm.InstanceID)
 
+	rels := cleanProps(qm.Relationships)
+	relWhere, relParams := "", map[string]any{}
+	if len(rels) > 0 {
+		relWhere = " AND type(r) IN $rels"
+		relParams["rels"] = rels
+	}
+
 	if id == "" {
-		res, err := d.client.Query(ctx, branch, domain, "MATCH (a)-[r]->(b) RETURN a, r, b LIMIT "+strconv.Itoa(limit), nil)
+		cypher := "MATCH (a)-[r]->(b) RETURN a, r, b LIMIT " + strconv.Itoa(limit)
+		if len(rels) > 0 {
+			cypher = "MATCH (a)-[r]->(b) WHERE type(r) IN $rels RETURN a, r, b LIMIT " + strconv.Itoa(limit)
+		}
+		res, err := d.client.Query(ctx, branch, domain, cypher, relParams)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +315,24 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 		g.add(r[0])
 	}
 
-	depth := qm.Depth
+	truncated, err := d.walk(ctx, branch, domain, g, starts, qm.Depth, limit, relWhere, relParams)
+	if err != nil {
+		return nil, err
+	}
+	frames, err := d.graphFrames(ctx, branch, domain, g, qm)
+	if err != nil {
+		return nil, err
+	}
+	if truncated {
+		addNotice(frames[1], data.NoticeSeverityWarning, fmt.Sprintf("Stopped at %d relationships. Lower the depth or raise the limit.", limit))
+	}
+	return frames, nil
+}
+
+// walk expands g from the start instances, one hop per Cypher call, up to
+// depth hops (1 to maxDepth). relWhere ("" or " AND type(r) IN $rels") limits
+// which relationships are followed. It reports whether the limit cut it short.
+func (d *Datasource) walk(ctx context.Context, branch, domain string, g *graph, starts []string, depth, limit int, relWhere string, relParams map[string]any) (bool, error) {
 	if depth <= 0 {
 		depth = 1
 	}
@@ -310,15 +342,19 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 	frontier := starts
 	truncated := false
 	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
+		params := map[string]any{"ids": frontier}
+		for k, v := range relParams {
+			params[k] = v
+		}
 		res, err := d.client.Query(ctx, branch, domain,
-			"MATCH (a)-[r]-(b) WHERE a.entityId IN $ids RETURN r, b LIMIT "+strconv.Itoa(limit),
-			map[string]any{"ids": frontier})
+			"MATCH (a)-[r]-(b) WHERE a.entityId IN $ids"+relWhere+" RETURN r, b LIMIT "+strconv.Itoa(limit),
+			params)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
 		rows, err := decodeRows(res)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
 		if len(rows) >= limit {
 			truncated = true
@@ -329,23 +365,50 @@ func (d *Datasource) graphQuery(ctx context.Context, branch, domain string, qm q
 				g.add(v)
 			}
 		}
-		frontier = frontier[:0]
+		frontier = nil
 		for _, n := range g.nodes[before:] {
 			frontier = append(frontier, str(n["entityId"]))
 		}
 		if len(g.edges) >= limit {
-			truncated = true
-			break
+			return true, nil
 		}
 	}
-	frames, err := d.graphFrames(ctx, branch, domain, g, qm)
-	if err != nil {
+	return truncated, nil
+}
+
+// relationshipCounts counts relationships by type URI: in the whole domain,
+// or within depth hops of the start instances (every type followed, so the
+// counts show what a filter can pick from).
+func (d *Datasource) relationshipCounts(ctx context.Context, branch, domain string, starts []string, depth int) (map[string]int, error) {
+	counts := map[string]int{}
+	if len(starts) == 0 {
+		res, err := d.client.Query(ctx, branch, domain, "MATCH (a)-[r]->(b) RETURN type(r)", nil)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := decodeRows(res)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if len(row) > 0 {
+				counts[str(row[0])]++
+			}
+		}
+		return counts, nil
+	}
+	g := newGraph()
+	for _, s := range starts { // seed, so the walk does not go back through them
+		g.nodeIndex[s] = len(g.nodes)
+		g.nodes = append(g.nodes, map[string]any{"entityId": s})
+	}
+	if _, err := d.walk(ctx, branch, domain, g, starts, depth, maxGraphLimit, "", nil); err != nil {
 		return nil, err
 	}
-	if truncated {
-		addNotice(frames[1], data.NoticeSeverityWarning, fmt.Sprintf("Stopped at %d relationships. Lower the depth or raise the limit.", limit))
+	for _, e := range g.edges {
+		counts[str(e["typeId"])]++
 	}
-	return frames, nil
+	return counts, nil
 }
 
 // Entity type names are put into the Cypher text as a label, so only plain
@@ -475,8 +538,13 @@ func (d *Datasource) cypherQuery(ctx context.Context, branch, domain string, qm 
 			if frames, err = splitSeries(frames[0]); err != nil {
 				return nil, err
 			}
+			enums := d.seriesEnums(ctx, branch, domain, frames)
 			if weighted {
-				frames = weighSeries(frames, qm.Weighting, tr.From, tr.To, qm.maxPoints, qm.IncludeMinMax)
+				// An enumeration is never averaged: its series stay as returned.
+				frames = weighSeries(frames, qm.Weighting, tr.From, tr.To, qm.maxPoints, qm.IncludeMinMax, func(f *data.Frame) bool { return enums[f] != nil })
+			}
+			for f, e := range enums {
+				applyEnum(data.Frames{f}, e)
 			}
 		}
 	}
@@ -652,6 +720,29 @@ func (d *Datasource) CallResource(ctx context.Context, req *backend.CallResource
 			return fail(err)
 		}
 		return reply(http.StatusOK, relationshipColors(types))
+
+	case "relationship-counts":
+		if domain == "" {
+			return reply(http.StatusOK, map[string]int{})
+		}
+		var starts []string
+		for _, s := range strings.Split(params["instance"], ",") {
+			if s = strings.TrimSpace(s); s != "" && !strings.HasPrefix(s, "rel:") {
+				starts = append(starts, s)
+			}
+		}
+		depth, _ := strconv.Atoi(params["depth"])
+		counts, err := d.relationshipCounts(ctx, branch, domain, starts, depth)
+		if err != nil {
+			return fail(err)
+		}
+		return reply(http.StatusOK, counts)
+
+	case "enums":
+		if domain == "" {
+			return reply(http.StatusOK, []*EnumInfo{})
+		}
+		return reply(http.StatusOK, d.kinds(ctx, branch, domain, params["refresh"] == "1").allEnums())
 
 	case "tree":
 		if domain == "" {

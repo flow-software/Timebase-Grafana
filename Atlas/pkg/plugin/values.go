@@ -177,11 +177,13 @@ func (d *Datasource) valuesQuery(ctx context.Context, branch, domain string, qm 
 	if scope == scopeType {
 		name = shortName(qm.EntityType)
 	}
+	enumOf := d.kinds(ctx, branch, domain, false).enumInfoOf
 	var frame *data.Frame
 	if qm.Layout == layoutColumns {
 		frame = nodesTable(name, nodes, tableOptions{IncludeQuality: qm.IncludeQuality, IncludeTime: qm.IncludeTime})
+		applyTableEnums(frame, nodes, enumOf)
 	} else {
-		frame = rowsTable(name, nodes, scope != scopeInstance)
+		frame = rowsTable(name, nodes, scope != scopeInstance, enumOf)
 	}
 	if truncated {
 		addNotice(frame, data.NoticeSeverityWarning, fmt.Sprintf("Only the first %d instances are shown. Raise the limit to see more.", limit))
@@ -236,8 +238,12 @@ func descendants(tree []TreeNode, id string) []string {
 
 // rowsTable: one row per property of each instance. The instance columns are
 // only added when there is more than one instance.
-func rowsTable(name string, nodes []map[string]any, withInstance bool) *data.Frame {
+// enumOf, when set, gives each value's enumeration: a "Value label" column
+// then shows the member labels.
+func rowsTable(name string, nodes []map[string]any, withInstance bool, enumOf func(typeURI, prop string) *EnumInfo) *data.Frame {
 	var inst, instID []string
+	var enumLabels []string
+	hasEnum := false
 	var props []string
 	value := column{name: "Value"}
 	var quality []string
@@ -256,6 +262,12 @@ func rowsTable(name string, nodes []map[string]any, withInstance bool) *data.Fra
 			quality = append(quality, qualityText(e.Quality, e.Value))
 			codes = append(codes, e.Quality)
 			times = append(times, e.Time)
+			lbl := ""
+			if enumOf != nil {
+				lbl = enumOf(str(n["typeId"]), e.Prop).label(e.Value)
+			}
+			hasEnum = hasEnum || lbl != ""
+			enumLabels = append(enumLabels, lbl)
 		}
 	}
 	frame := data.NewFrame(name)
@@ -269,6 +281,11 @@ func rowsTable(name string, nodes []map[string]any, withInstance bool) *data.Fra
 		data.NewField("Property", nil, nonNil(props)),
 		// Without an explicit name Grafana shows the frame name here.
 		value.field().SetConfig(&data.FieldConfig{DisplayNameFromDS: "Value"}),
+	)
+	if hasEnum {
+		frame.Fields = append(frame.Fields, data.NewField("Value label", nil, enumLabels))
+	}
+	frame.Fields = append(frame.Fields,
 		data.NewField("Quality", nil, nonNil(quality)),
 		data.NewField("Quality code", nil, nonNilPtr(codes)),
 		timeField("Time", nonNilPtr(times)),
@@ -356,11 +373,13 @@ func (d *Datasource) selectionValues(ctx context.Context, branch, domain string,
 		nodes = append(nodes, n)
 	}
 
+	enumOf := d.kinds(ctx, branch, domain, false).enumInfoOf
 	var frame *data.Frame
 	if qm.Layout == layoutColumns {
 		frame = nodesTable("values", nodes, tableOptions{IncludeQuality: qm.IncludeQuality, IncludeTime: qm.IncludeTime})
+		applyTableEnums(frame, nodes, enumOf)
 	} else {
-		frame = rowsTable("values", nodes, len(nodes) > 1)
+		frame = rowsTable("values", nodes, len(nodes) > 1, enumOf)
 	}
 	if len(missing) > 0 {
 		addNotice(frame, data.NoticeSeverityWarning, fmt.Sprintf("Not found in %s/%s: %s", branch, domain, strings.Join(missing, ", ")))

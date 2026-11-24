@@ -29,14 +29,52 @@ const tvqURI = "urn:atlas:ontology:atlas-common:TVQ"
 // kindResolver answers the declared kind of a property on an entity type.
 type kindResolver struct {
 	types map[string]atlas.EntityType
+	enums map[string]*atlas.EnumType // by URI
 }
 
-func newKindResolver(types []atlas.EntityType) *kindResolver {
-	r := &kindResolver{types: make(map[string]atlas.EntityType, len(types))}
+func newKindResolver(types []atlas.EntityType, enums []atlas.EnumType) *kindResolver {
+	r := &kindResolver{types: make(map[string]atlas.EntityType, len(types)), enums: map[string]*atlas.EnumType{}}
 	for _, t := range types {
 		r.types[t.URI] = t
 	}
+	for i := range enums {
+		r.enums[enums[i].URI] = &enums[i]
+	}
 	return r
+}
+
+// enumOf returns the enumeration type of property prop on an instance of
+// typeURI (a TVQ's Value, or a plain property), or nil. A pin on the type
+// wins over the property as attached to the type or an ancestor.
+func (r *kindResolver) enumOf(typeURI, prop string) *atlas.EnumType {
+	if r == nil || len(r.enums) == 0 {
+		return nil
+	}
+	t, ok := r.types[typeURI]
+	if !ok {
+		return nil
+	}
+	for _, pin := range t.Pins {
+		if localName(pin.PropertyURI) == prop {
+			if e := r.enums[pin.FieldEnumOverrides["Value"]]; e != nil {
+				return e
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for cur, ok := t, true; ok && !seen[cur.URI]; cur, ok = r.types[cur.ParentType] {
+		seen[cur.URI] = true
+		for _, p := range cur.Properties {
+			if localName(p.URI) != prop {
+				continue
+			}
+			if p.CompoundRange != nil {
+				return r.enums[p.CompoundRange.FieldEnumOverrides["Value"]]
+			}
+			return r.enums[p.EnumType]
+		}
+	}
+	return nil
 }
 
 // kind returns "number", "text", "boolean" or "record" for property prop
@@ -133,7 +171,11 @@ func (d *Datasource) kinds(ctx context.Context, branch, domain string, refresh b
 	if err != nil {
 		log.DefaultLogger.Warn("Atlas entity types unavailable; property kinds come from current values", "world", key, "error", err)
 	} else {
-		r = newKindResolver(types)
+		enums, eerr := d.client.EnumTypes(ctx, branch, domain)
+		if eerr != nil {
+			log.DefaultLogger.Info("Atlas enumeration types unavailable; enumerations show as their keys", "world", key, "error", eerr)
+		}
+		r = newKindResolver(types, enums)
 	}
 	c.mu.Lock()
 	if c.entries == nil {

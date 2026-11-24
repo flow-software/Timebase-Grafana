@@ -13,7 +13,7 @@ import { DataQuery } from '@grafana/schema';
 export type AtlasQueryType = 'graph' | 'values' | 'history' | 'cypher' | 'instances' | 'variable';
 
 /** Selection variables: give the picked instances' ids, or the names of the picked properties. */
-export type VariableReturns = 'instances' | 'properties';
+export type VariableReturns = 'instances' | 'properties' | 'enum' | 'relationships';
 
 /** History: raw points, or minute / hour / day buckets. Auto picks from the panel's time range. */
 export type Aggregation = 'auto' | 'raw' | 'minute' | 'hour' | 'day';
@@ -76,6 +76,11 @@ export interface AtlasQuery extends DataQuery {
   /** Instances table: add a quality and a time column per live value. */
   includeQuality?: boolean;
   includeTime?: boolean;
+  /**
+   * Graph: relationship type URIs (or $variables) to follow and draw; empty follows every relationship.
+   * Relationship-type variables: the types offered (empty offers all).
+   */
+  relationships?: string[];
   /** Cypher mode. $name refers to a Cypher parameter; Grafana variables are passed as parameters. */
   cypher?: string;
   /** Filled in at query time from Grafana variables. Not edited by the user. */
@@ -85,6 +90,9 @@ export interface AtlasQuery extends DataQuery {
   weighting?: CypherWeighting;
   /** Selection variables: what the values are. */
   returns?: VariableReturns;
+  /** Selection variables with returns "enum": the enumeration (local name) and its key kind. */
+  enumType?: string;
+  enumKeyKind?: EnumInfo['keyKind'];
 }
 
 /**
@@ -184,4 +192,14 @@ export interface LiveProperty {
   kind: 'number' | 'text' | 'boolean' | 'record' | 'unknown';
   /** Record parts (fields other than Timestamp), with the kind of their current value. */
   parts?: Array<{ name: string; kind: LiveProperty['kind'] }>;
+  /** The enumeration the value is bound to: shown by label, never averaged. */
+  enum?: EnumInfo;
+}
+
+/** An Atlas enumeration type: stored keys and their labels. */
+export interface EnumInfo {
+  name: string;
+  label: string;
+  keyKind?: 'number' | 'boolean' | 'text';
+  members: Array<{ key: string; label: string }>;
 }

@@ -3,8 +3,11 @@ import { QueryEditorProps, SelectableValue } from '@grafana/data';
 import { Combobox, InlineField, RadioButtonGroup, Stack } from '@grafana/ui';
 
 import { DataSource } from '../datasource';
+import { withoutProperties } from '../tree';
 import { AtlasOptions, AtlasQuery, VariableReturns, World } from '../types';
+import { EnumField } from './EnumField';
 import { HistoryField } from './HistoryField';
+import { RelationshipField } from './RelationshipField';
 import { QueryEditor } from './QueryEditor';
 
 type Props = QueryEditorProps<DataSource, AtlasQuery, AtlasOptions, AtlasQuery>;
@@ -23,6 +26,16 @@ const sources: Array<SelectableValue<Source>> = [
 const returnsOptions: Array<SelectableValue<VariableReturns>> = [
   { label: 'Instances', value: 'instances', description: 'The instance ids, shown with their names' },
   { label: 'Properties', value: 'properties', description: 'The names of the live properties picked' },
+  {
+    label: 'Enumeration members',
+    value: 'enum',
+    description: 'The members of an Atlas enumeration: labels shown, keys as values (for Cypher filters)',
+  },
+  {
+    label: 'Relationship types',
+    value: 'relationships',
+    description: 'Relationship types for a Graph query: names shown, type URIs as values',
+  },
 ];
 
 const LABEL_WIDTH = 14;
@@ -117,17 +130,60 @@ function SelectionVariable({
         labelWidth={LABEL_WIDTH}
         tooltip="Instances: use as $name in a Data selection, e.g. $machine with + nested. Properties: use after the slash, e.g. CNC01-Production/$prop."
       >
-        <RadioButtonGroup options={returnsOptions} value={returns} onChange={(v) => update({ returns: v })} />
-      </InlineField>
-      <InlineField label="Selection" labelWidth={LABEL_WIDTH} grow>
-        <HistoryField
-          datasource={datasource}
-          branch={branch}
-          domain={domain}
-          value={query.selection ?? []}
-          onChange={(selection) => update({ selection })}
+        <RadioButtonGroup
+          options={returnsOptions}
+          value={returns}
+          onChange={(v) =>
+            update(
+              v === 'instances' && query.selection
+                ? { returns: v, selection: withoutProperties(query.selection) }
+                : { returns: v }
+            )
+          }
         />
       </InlineField>
+      {returns === 'enum' ? (
+        <InlineField
+          label="Enumeration"
+          labelWidth={LABEL_WIDTH}
+          tooltip="Use the variable in Cypher, e.g. AND v.Value IN $mode. Number and boolean keys are sent as numbers and booleans, so they match the stored values."
+        >
+          <EnumField
+            datasource={datasource}
+            branch={branch}
+            domain={domain}
+            value={query.enumType}
+            onChange={(e) => update({ enumType: e?.name ?? '', enumKeyKind: e?.keyKind })}
+          />
+        </InlineField>
+      ) : returns === 'relationships' ? (
+        <InlineField
+          label="Offer"
+          labelWidth={LABEL_WIDTH}
+          tooltip="The relationship types in the dropdown. Empty offers every type of the domain. Use the variable in a Graph query's Relationships."
+        >
+          <RelationshipField
+            datasource={datasource}
+            branch={branch}
+            domain={domain}
+            value={query.relationships ?? []}
+            placeholder="every relationship type"
+            onChange={(relationships) => update({ relationships })}
+          />
+        </InlineField>
+      ) : (
+        <InlineField label="Selection" labelWidth={LABEL_WIDTH} grow>
+          <HistoryField
+            datasource={datasource}
+            branch={branch}
+            domain={domain}
+            value={returns === 'instances' ? withoutProperties(query.selection ?? []) : (query.selection ?? [])}
+            onChange={(selection) => update({ selection })}
+            instancesOnly={returns === 'instances'}
+            defaultView="types"
+          />
+        </InlineField>
+      )}
     </Stack>
   );
 }

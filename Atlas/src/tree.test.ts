@@ -1,4 +1,13 @@
-import { ancestorsOf, buildTree, expandSelection, filterTree, liveDescendants, pickTree, variableValues } from './tree';
+import {
+  ancestorsOf,
+  buildTree,
+  expandSelection,
+  filterTree,
+  liveDescendants,
+  pickTree,
+  variableValues,
+  withoutProperties,
+} from './tree';
 import { TreeNodeData } from './types';
 
 const nodes: TreeNodeData[] = [
@@ -102,6 +111,25 @@ describe('variableValues', () => {
       world
     );
     expect(v).toEqual({ text: ['Mill 1', 'CNC02'], value: ['CNC01', 'CNC02'] });
+  });
+
+  it('ignores properties in an instance variable', () => {
+    // "every CNCMachine FeedRate" used to drop CNC02 (no FeedRate); instances are instances.
+    const v = variableValues(
+      {
+        refId: 'v',
+        queryType: 'variable',
+        selection: [{ instance: '', type: 'CNCMachine', scope: 'type', property: 'FeedRate' }],
+      },
+      world
+    );
+    expect(v.value).toEqual(['CNC01', 'CNC02']);
+    expect(
+      withoutProperties([
+        { instance: 'CNC01-Production', property: 'FeedRate' },
+        { instance: 'CNC01-Production', property: 'JobNumber' },
+      ])
+    ).toEqual([{ instance: 'CNC01-Production' }]);
   });
 
   it('shows the id where names repeat', () => {

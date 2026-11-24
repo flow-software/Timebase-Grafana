@@ -27,7 +27,7 @@ func TestDeclaredKinds(t *testing.T) {
 	if err := json.Unmarshal([]byte(entityTypesJSON), &types); err != nil {
 		t.Fatal(err)
 	}
-	r := newKindResolver(types)
+	r := newKindResolver(types, nil)
 	for _, c := range []struct{ typ, prop, want string }{
 		{"urn:atlas:ontology:cesmii-workshop:CNCProduction", "JobNumber", "text"},
 		{"urn:atlas:ontology:cesmii-workshop:CNCProduction", "AlarmActive", "number"},

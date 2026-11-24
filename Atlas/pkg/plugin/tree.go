@@ -27,6 +27,8 @@ type LiveProperty struct {
 	// Parts of a record (kind "record"): its fields other than Timestamp,
 	// with the kind of their current value, for "Edit as Cypher".
 	Parts []LiveProperty `json:"parts,omitempty"`
+	// Enum: the enumeration the value is bound to, with its members.
+	Enum *EnumInfo `json:"enum,omitempty"`
 }
 
 // recordParts lists the plain fields of a record value, sorted by name.
@@ -100,7 +102,7 @@ func (d *Datasource) instanceTree(ctx context.Context, branch, domain string) ([
 				if k := declared.kind(str(m["typeId"]), p.Name); k != "" {
 					kind = k
 				}
-				lp := LiveProperty{Name: p.Name, Kind: kind}
+				lp := LiveProperty{Name: p.Name, Kind: kind, Enum: declared.enumInfoOf(str(m["typeId"]), p.Name)}
 				if kind == "record" {
 					lp.Parts = recordParts(m[p.Name])
 				}

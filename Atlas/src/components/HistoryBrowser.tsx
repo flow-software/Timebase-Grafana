@@ -19,6 +19,7 @@ import {
   buildTree,
   expandSelection,
   liveDescendants,
+  withoutProperties,
   nodeName,
   PickItem,
   pickTree,
@@ -54,6 +55,10 @@ interface Props {
   variables?: SelectionVariables;
   /** The picks with variables replaced by their current values, for the counts. */
   resolve?: (picks: HistoryPick[]) => HistoryPick[];
+  /** Instances and types only, no properties (an instance variable). */
+  instancesOnly?: boolean;
+  /** The view to open on when nothing is picked yet. */
+  defaultView?: View;
 }
 
 /** Per instance or type: 'all' (every live property, including ones added later) or the picked properties. */
@@ -100,7 +105,7 @@ function findItem(items: PickItem[], id: string): PickItem | undefined {
 const listOf = (values: string[], max = 4) =>
   values.slice(0, max).join(', ') + (values.length > max ? `, +${values.length - max}` : '');
 
-type View = 'instances' | 'types';
+export type View = 'instances' | 'types';
 
 const views: Array<{ label: string; value: View; description: string }> = [
   { label: 'Instances', value: 'instances', description: 'The containment tree, as in Atlas' },
@@ -120,11 +125,28 @@ export function HistoryBrowser(props: Props) {
   return props.isOpen ? <Body {...props} /> : null;
 }
 
-function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onDismiss, variables, resolve }: Props) {
+function Body({
+  title,
+  nodes,
+  loading,
+  error,
+  selection,
+  onApply,
+  onRefresh,
+  onDismiss,
+  variables,
+  resolve,
+  instancesOnly,
+  defaultView,
+}: Props) {
   const styles = useStyles2(getStyles);
   const [filter, setFilter] = useState('');
   const [view, setView] = useState<View>(() =>
-    selection.length > 0 && selection.every((p) => p.scope === 'type') ? 'types' : 'instances'
+    selection.length === 0
+      ? (defaultView ?? 'instances')
+      : selection.every((p) => p.scope === 'type')
+        ? 'types'
+        : 'instances'
   );
   const [sel, setSel] = useState<Sel>(() => toSel(selection));
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -274,7 +296,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
    * when one of the variable's current values is among its live properties.
    */
   const propVarRows = (liveNames: string[], depth: number, cur: Props_ | undefined, onToggle: (p: string) => void) =>
-    propVars
+    (instancesOnly ? [] : propVars)
       .filter((v) => v.values.some((x) => liveNames.includes(x)))
       .map((v) => (
         <PropertyRow
@@ -304,7 +326,9 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     const openKey = `var:${name}:${n.id}`;
     const open = expanded.has(openKey);
     const live = (n.live ?? []).map((l) => l.name);
-    const hasBody = item.children.length > 0 || item.props.length > 0;
+    const props = instancesOnly ? [] : item.props;
+    const pickable = instancesOnly || live.length > 0;
+    const hasBody = item.children.length > 0 || props.length > 0;
     const toggleRow = () => change((s) => (s.vars.get(key) === 'all' ? s.vars.delete(key) : s.vars.set(key, 'all')));
     const what = `every ${n.type} under $${name}`;
     return (
@@ -319,8 +343,8 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
           ) : (
             <span className={styles.spacer} />
           )}
-          {live.length > 0 ? (
-            <span className={styles.boxWrap} title={`All live values of ${what}`}>
+          {pickable ? (
+            <span className={styles.boxWrap} title={instancesOnly ? what : `All live values of ${what}`}>
               <Checkbox
                 key={cur === 'all' || viaAll ? 'all' : cur ? 'some' : 'none'}
                 value={cur === 'all' || viaAll}
@@ -335,18 +359,18 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
           <button
             type="button"
             className={styles.label}
-            onClick={() => (live.length > 0 ? toggleRow() : hasBody && toggleOpen(openKey))}
+            onClick={() => (pickable ? toggleRow() : hasBody && toggleOpen(openKey))}
           >
             <span className={styles.name}>{nodeName(n)}</span>
             <span className={styles.meta}>
               {what}
-              {live.length > 0 && ` · ${live.length} live`}
+              {!instancesOnly && live.length > 0 && ` · ${live.length} live`}
             </span>
           </button>
         </div>
         {open && (
           <ul className={styles.list}>
-            {item.props.map((p) => (
+            {props.map((p) => (
               <PropertyRow
                 key={'p:' + p.name}
                 prop={p}
@@ -413,7 +437,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
         </div>
         {open && example && (
           <ul className={styles.list}>
-            {example.props.map((p) => (
+            {(instancesOnly ? [] : example.props).map((p) => (
               <PropertyRow
                 key={'p:' + p.name}
                 prop={p}
@@ -439,9 +463,11 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     const n = item.node;
     const live = n.live ?? [];
     const cur = sel.picked.get(n.id);
-    const hasBody = item.children.length > 0 || item.props.length > 0;
+    const props = instancesOnly ? [] : item.props;
+    const hasBody = item.children.length > 0 || props.length > 0;
     const open = filtering || expanded.has(n.id);
-    const covered = liveDescendants(item);
+    // An instance variable can pick any instance, with live values or not.
+    const covered = instancesOnly ? allDescendants(item) : liveDescendants(item);
     const state = rowState(n, covered);
     const nestedValue = sel.nested.get(n.id);
     const isNested = nestedValue !== undefined;
@@ -452,7 +478,9 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     const title =
       covered.length > 1 || subtreeIds(nodes ?? [], n.id).length > 1
         ? 'This instance and everything nested under it, including instances added later'
-        : 'All live values of this instance';
+        : instancesOnly
+          ? 'This instance'
+          : 'All live values of this instance';
     return (
       <li key={n.id}>
         <div
@@ -493,7 +521,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
             <span className={styles.name}>{nodeName(n)}</span>
             <span className={styles.meta}>
               {(n.label && n.label !== n.id ? `${n.id} · ` : '') + n.type}
-              {live.length > 0 && ` · ${live.length} live`}
+              {!instancesOnly && live.length > 0 && ` · ${live.length} live`}
             </span>
             {isNested && (
               <span className={styles.tag} title="Follows instances added or removed under it">
@@ -508,7 +536,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
         </div>
         {hasBody && open && (
           <ul className={styles.list}>
-            {item.props.map((p) => (
+            {props.map((p) => (
               <PropertyRow
                 key={'p:' + p.name}
                 prop={p}
@@ -534,7 +562,8 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
   const renderType = (g: (typeof groups)[number]) => {
     const key = 'type:' + g.type;
     const cur = sel.types.get(g.type);
-    const open = (filtering && g.props.length > 0) || expanded.has(key);
+    const typeProps = instancesOnly ? [] : g.props;
+    const open = (filtering && typeProps.length > 0) || expanded.has(key);
     const toggleType = () =>
       change((s) => (s.types.get(g.type) === 'all' ? s.types.delete(g.type) : s.types.set(g.type, 'all')));
     const toggleTypeProp = (prop: string) =>
@@ -549,7 +578,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     return (
       <li key={key}>
         <div className={cx(styles.row, cur && styles.selected)} role="treeitem">
-          {g.props.length > 0 ? (
+          {typeProps.length > 0 ? (
             <IconButton
               name={open ? 'angle-down' : 'angle-right'}
               aria-label={open ? 'Collapse' : 'Expand'}
@@ -571,13 +600,13 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
             <span className={styles.name}>{g.type}</span>
             <span className={styles.meta}>
               {g.ids.length} instance{g.ids.length === 1 ? '' : 's'}
-              {g.props.length > 0 && ` · ${g.props.length} live`}
+              {typeProps.length > 0 && ` · ${typeProps.length} live`}
             </span>
           </button>
         </div>
-        {open && (
+        {open && typeProps.length > 0 && (
           <ul className={styles.list}>
-            {g.props.map((p) => (
+            {typeProps.map((p) => (
               <PropertyRow
                 key={'p:' + p.name}
                 prop={p}
@@ -600,7 +629,7 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
     );
   };
 
-  const picks = toPicks(sel, byId);
+  const picks = instancesOnly ? withoutProperties(toPicks(sel, byId)) : toPicks(sel, byId);
   const resolved = expandSelection(resolve ? resolve(picks) : picks, nodes ?? []);
   const instances = new Set(resolved.map((p) => p.instance)).size;
   const series = resolved.reduce((sum, p) => sum + (p.property ? 1 : (byId.get(p.instance)?.live?.length ?? 1)), 0);
@@ -647,12 +676,18 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
       {nodes && (
         <>
           <div className={styles.summary}>
-            {view === 'types'
-              ? 'Tick a type for every instance of it, or open it to pick one property of every instance. New instances are included automatically.'
-              : filtering
-                ? `${tree.matches} matches` + (tree.matches > MAX_FILTERED_ROWS ? '; refine the filter to see all' : '')
-                : 'Tick a row for it and everything nested under it (new instances included), or open it to pick single properties.' +
-                  (showVars ? ' Picks under a $variable apply to every instance it holds.' : '')}
+            {instancesOnly && !filtering
+              ? view === 'types'
+                ? 'Tick a type for every instance of it. New instances are included automatically.'
+                : 'Tick an instance. A row with instances nested under it adds them too, including ones added later.' +
+                  (showVars ? ' Picks under a $variable apply to every instance it holds.' : '')
+              : view === 'types'
+                ? 'Tick a type for every instance of it, or open it to pick one property of every instance. New instances are included automatically.'
+                : filtering
+                  ? `${tree.matches} matches` +
+                    (tree.matches > MAX_FILTERED_ROWS ? '; refine the filter to see all' : '')
+                  : 'Tick a row for it and everything nested under it (new instances included), or open it to pick single properties.' +
+                    (showVars ? ' Picks under a $variable apply to every instance it holds.' : '')}
           </div>
           <div className={styles.scroll}>
             {showVars && (
@@ -680,7 +715,8 @@ function Body({ title, nodes, loading, error, selection, onApply, onRefresh, onD
             <span>
               {nothing
                 ? 'Nothing selected'
-                : `${instances} instance${instances === 1 ? '' : 's'} now, about ${series} series`}
+                : `${instances} instance${instances === 1 ? '' : 's'} now` +
+                  (instancesOnly ? '' : `, about ${series} series`)}
               {outside.length > 0 && ` (plus ${outside.join(', ')})`}
             </span>
             {!nothing && (
@@ -719,23 +755,34 @@ function PropertyRow({
   onToggle: () => void;
 }) {
   const styles = useStyles2(getStyles);
+  const en = !icon ? prop.enum : undefined;
+  const kindText = en
+    ? `${en.label}: ${en.members
+        .slice(0, 4)
+        .map((m) => m.label)
+        .join(', ')}${en.members.length > 4 ? ', …' : ''}`
+    : prop.kind === 'record'
+      ? 'record: one column per part'
+      : prop.kind;
   return (
     <li>
-      <div className={cx(styles.row, styles.prop)} style={{ paddingLeft: depth * 20 }}>
+      <div
+        className={cx(styles.row, styles.prop)}
+        style={{ paddingLeft: depth * 20 }}
+        title={
+          en ? [`Enumeration ${en.label}`, ...en.members.map((m) => `${m.key} = ${m.label}`)].join('\n') : undefined
+        }
+      >
         <span className={styles.spacer} />
         <Checkbox value={on} onChange={onToggle} aria-label={label} />
         <button type="button" className={styles.label} onClick={onToggle}>
           <Icon
-            name={icon ?? KIND_ICONS[prop.kind]}
+            name={icon ?? (en ? 'list-ul' : KIND_ICONS[prop.kind])}
             size="sm"
-            className={icon ? styles.varIcon : styles.kind[prop.kind]}
+            className={icon ? styles.varIcon : en ? styles.enumIcon : styles.kind[prop.kind]}
           />
           <span>{prop.name}</span>
-          <span className={styles.meta}>
-            {icon
-              ? extra
-              : (prop.kind === 'record' ? 'record: one column per part' : prop.kind) + (extra ? ` · ${extra}` : '')}
-          </span>
+          <span className={styles.meta}>{icon ? extra : kindText + (extra ? ` · ${extra}` : '')}</span>
         </button>
       </div>
     </li>
@@ -905,6 +952,7 @@ const getStyles = (theme: GrafanaTheme2) => {
       record: css({ color: tb.cyan, alignSelf: 'center' }),
       unknown: css({ color: theme.colors.text.secondary, alignSelf: 'center' }),
     } as Record<LiveProperty['kind'], string>,
+    enumIcon: css({ color: tb.green, alignSelf: 'center' }),
     boxWrap: css({ display: 'inline-flex', flexShrink: 0 }),
     varIcon: css({ color: tb.orange, alignSelf: 'center', flexShrink: 0 }),
     section: css({
@@ -924,3 +972,8 @@ const getStyles = (theme: GrafanaTheme2) => {
     }),
   };
 };
+
+/** Ids of an item and everything under it. */
+function allDescendants(item: PickItem): string[] {
+  return [item.node.id, ...item.children.flatMap(allDescendants)];
+}

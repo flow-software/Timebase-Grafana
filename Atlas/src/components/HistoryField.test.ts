@@ -84,3 +84,14 @@ describe('variable suggestions', () => {
     expect(suggestions({ instance: '$machines', property: '$prop' }, nodes, vars)).toEqual([]);
   });
 });
+
+describe('enumTree', () => {
+  it('lists each enumeration with its members underneath', () => {
+    const { enumTree } = require('./EnumField');
+    const t = enumTree([{ name: 'ModeEnum', label: 'Mode', members: [{ key: '1', label: 'Automatic' }] }]);
+    expect(t).toEqual([
+      { id: 'ModeEnum', label: 'Mode', type: 'enumeration' },
+      { id: 'ModeEnum\u00001', label: 'Automatic', type: 'member', parentId: 'ModeEnum' },
+    ]);
+  });
+});

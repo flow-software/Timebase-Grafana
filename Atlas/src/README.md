@@ -17,6 +17,7 @@ Every query has a **Branch** and **Domain**. Leave them empty to use the default
 ### Graph
 
 - **Start at**: empty shows the whole domain. **Select instance** opens the instance tree, nested by containment as in the Atlas Instances view, with a filter and the dashboard variables whose values are instances listed first; you can also type an id or a `$variable`. The pick shows as a chip, like the Data selection; its **$** button offers a variable that holds the instance ("Use `$machine` instead of CNC02"). A multi-value variable gives one graph around all its instances.
+- **Relationships**: empty follows every relationship. **Select relationships** opens the domain's relationship types, each with its line as drawn in the graph (solid containment, dashed other), with a filter, **All** / **None**, and relationship-type dashboard variables listed first. Each type shows how many relationships it has, most first. With a start instance, the modal lists only the types within the depth around it (**Around CNC01**); **Whole domain** lists them all with domain counts. Only the ticked types are followed and drawn: with a depth, the walk follows only them ("Around CNC01, depth 3, only _feeds_"). A relationship-type variable (`$rels`) lets viewers choose on the dashboard.
 - **Colour**: _Data quality_ splits each node's ring by the quality of its live values (green Good, yellow Uncertain, red Bad, grey no data, blue no live values). _Entity type_ gives each type its own colour.
 - **Lines**: _Containment / other_ draws containment grey and solid, other relationships orange and dashed. _Relationship type_ gives each relationship type its own colour; containment stays solid. A key under the options lists the types in the current result. A type keeps its colour across panels.
 - **Relationship names**: the Node Graph panel shows relationship names only on hover. Switch this on to draw each relationship as a small dot with its name, so names are always visible.
@@ -62,11 +63,21 @@ Text and status properties (a job number, a program, an alarm flag) suit the **S
 
 **Aggregation**: _Auto_ draws one line per series that smooths noise but keeps stops and spikes. The panel range is cut into slices (a third of the panel's max data points); each slice draws its time-weighted average, plus its lowest or highest value at its own time when that lies further from the average than the series' typical spread (the median min-to-max range of its slices). Raw values that fit the panel are returned unchanged. A slice with no value at all after one with a value breaks the line. _Raw_ reads every value. _Minute_, _Hour_ and _Day_ give one time-weighted average per bucket (UTC), with optional min and max. Text and boolean properties are always read raw.
 
-The weighting is exact when the plugin can read the raw values: always up to 3 hours, and beyond that whenever the range holds at most 100,000 of them. Past that it weighs Atlas's minute (or hour, day) bucket averages: exact between buckets, a plain mean inside each. If even that is too coarse for a fixed bucket size, the panel says the values are plain averages. A property's kind (number, text, boolean, record) comes from its type definition in the Atlas information model (`entity-types`, including pins on subtypes), so it is right even when the current value is empty; only a property whose value type is left open is judged by its current value. **Min/max** (Minute, Hour, Day) adds the bucket minimum and maximum (including a value held over from before the bucket) as series; **Quality** adds the OPC quality code of each raw value.
+The weighting is exact when the plugin can read the raw values: always up to 3 hours, and beyond that whenever the range holds at most 100,000 of them. Past that it weighs Atlas's minute (or hour, day) bucket averages: exact between buckets, a plain mean inside each. If even that is too coarse for a fixed bucket size, the panel says the values are plain averages. A property's kind (number, text, boolean, record) comes from its type definition in the Atlas information model (`entity-types`, including pins on subtypes), so it is right even when the current value is empty; only a property whose value type is left open is judged by its current value. **Min/max** (Minute, Hour, Day) adds the bucket minimum and maximum (including a value held over from before the bucket) as series; **Quality** adds the OPC quality of each raw value (Good, Uncertain, Bad) to the tooltip and to tables, without drawing it as a line. In Auto, an averaged point shows the worst quality in its slice. Quality needs raw values, so it is left out when a long range is read from Atlas's minute or hour buckets.
 
 **Units**: Atlas type definitions carry no units, but instances built on the atlas-common Tag pattern have a `UOM` text property next to `Data` (the InfoHub KPI instances do). The unit is set on the `Data` series, or on the only live value of such an instance. Common units (`%`, `°C`, `min`, `rpm`, `kW`, `bar`, ...) map to Grafana units; others are shown as a suffix.
 
 The first value can be from just before the range: it is the value the property held when the range starts.
+
+**Enumerations**: a property bound to an Atlas enumeration type (a code list such as ControllerMode 1 = Automatic, 2 = Manual, 3 = MDI) is shown by its labels, with no set-up in the panel:
+
+- Trends read it raw in every aggregation and never average it (Automatic and MDI do not average to Manual). The value holds until the next one.
+- Every series gets value mappings from the enumeration, one colour per member, so a state timeline shows the labels and colours each state the same on every row.
+- In **Current**, the row-per-property table adds a **Value label** column; the row-per-instance table maps the column.
+- In the Select modal, the property shows a list icon, the enumeration's name and its first labels; hover for every key and label.
+- A time-weighted Cypher series of an enumeration property (identified by its `entity` and `property` columns) is left as returned and gets the same mappings.
+
+The binding is read from the type definitions (`enum-types` and `entity-types`): a plain property's `enumType`, or a live value's `Value` field. An Atlas without enumeration types works as before.
 
 ## Cypher and dashboard variables
 
@@ -101,10 +112,12 @@ Name the type in the `MATCH` (`(n:CNCProduction)`): with a bare `(n)` Atlas unwi
 
 A variable query has two sources:
 
-- **Selection** uses the same Select modal as the Data tab. **Values** _Instances_ gives the ids of the picked instances (shown with their names, or the id where names repeat); _Properties_ gives the names of the picked live properties. Picks are resolved when the dashboard loads, so "every CNCMachine" includes machines added later.
+- **Selection** uses the same Select modal as the Data tab. **Values** _Instances_ gives the ids of the picked instances (shown with their names, or the id where names repeat); _Properties_ gives the names of the picked live properties; _Enumeration members_ gives the members of an Atlas enumeration (labels shown, keys as the values), picked in the same kind of modal, with each enumeration's members listed under it; _Relationship types_ gives the domain's relationship types (names shown, type URIs as the values), optionally only the ones picked under **Offer**, for a Graph query's **Relationships**. Picks are resolved when the dashboard loads, so "every CNCMachine" includes machines added later.
 - **Query** runs any Graph, Data or Cypher query; the first column becomes the values. For example `MATCH (m:CNCMachine) RETURN m.entityId` gives one value per machine. Variables saved before 0.2.0 open here.
 
 Use the variables in a Data selection: `$machine-Production/$prop`, or `$machine` with the tree icon on (+ nested). A multi-value or All variable gives one pick per value, in the instance and in the property. Grafana's **Run query** in the variable editor refreshes the preview of values.
+
+An enumeration variable is for Cypher: `WHERE n.ControllerMode.Value IN $mode`. Number and boolean keys are sent typed, because Atlas compares types (`IN ["1"]` matches nothing on a stored 1). Use `${mode:text}` in a panel title for the labels.
 
 ## Live values
 

@@ -2,13 +2,16 @@ import { CoreApp, DataSourceInstanceSettings, ScopedVars } from '@grafana/data';
 import { DataSourceWithBackend, getTemplateSrv, TemplateSrv } from '@grafana/runtime';
 
 import { CypherVars, cypherParameterNames } from './cypher';
+import { typedKeys } from './enums';
 import { AtlasVariableSupport } from './variables';
 import {
   AtlasOptions,
   AtlasQuery,
   DEFAULT_QUERY,
+  EnumInfo,
   HistoryPick,
   InstanceOption,
+  SelectionVariable,
   SelectionVariables,
   RelationshipColor,
   TreeNodeData,
@@ -55,6 +58,10 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     if (query.selection?.length) {
       out.selection = query.selection.flatMap((p) => this.expandPick(p, scopedVars));
     }
+    if (query.relationships?.length) {
+      // A relationship-type variable gives one entry per value.
+      out.relationships = query.relationships.flatMap((r) => this.expandText(r, scopedVars)).filter((r) => r);
+    }
 
     if (query.queryType === 'cypher' && query.cypher) {
       const params: Record<string, unknown> = {};
@@ -67,7 +74,9 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
           value = v;
           return '';
         });
-        params[name] = value;
+        // An "Enumeration members" variable sends its keys typed (numbers match stored numbers).
+        const vq = (srv.getVariables().find((x) => x.name === name) as { query?: AtlasQuery } | undefined)?.query;
+        params[name] = vq?.returns === 'enum' ? typedKeys(value, vq.enumKeyKind) : value;
       }
       out.parameters = params;
     }
@@ -122,11 +131,34 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
     });
   }
 
+  /** The domain's enumeration types (its own and its libraries'), with their members. */
+  getEnums(branch: string, domain: string): Promise<EnumInfo[]> {
+    return this.getResource<EnumInfo[]>('enums', { branch: this.expand(branch), domain: this.expand(domain) });
+  }
+
   /** Relationship types with the colour their lines get when lines are coloured by type. */
   getRelationshipColors(branch: string, domain: string): Promise<RelationshipColor[]> {
     return this.getResource<RelationshipColor[]>('relationship-types', {
       branch: this.expand(branch),
       domain: this.expand(domain),
+    });
+  }
+
+  /**
+   * Relationships by type URI: in the whole domain, or within depth hops of
+   * the instance (a multi-value variable gives several, comma-separated).
+   */
+  getRelationshipCounts(
+    branch: string,
+    domain: string,
+    instance?: string,
+    depth?: number
+  ): Promise<Record<string, number>> {
+    return this.getResource<Record<string, number>>('relationship-counts', {
+      branch: this.expand(branch),
+      domain: this.expand(domain),
+      instance: instance ? this.templateSrv.replace(instance, undefined, 'csv') : '',
+      depth: depth ?? 1,
     });
   }
 
@@ -161,6 +193,19 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
         out.instances.push({ name: v.name, values: values.filter((x) => ids.has(x)) });
       } else if (values.length > 0 && values.every((x) => props.has(x))) {
         out.properties.push({ name: v.name, values });
+      }
+    }
+    return out;
+  }
+
+  /** Dashboard variables whose current values are all relationship type URIs of the domain. */
+  relationshipVariables(types: RelationshipColor[]): SelectionVariable[] {
+    const uris = new Set(types.map((t) => t.uri));
+    const out: SelectionVariable[] = [];
+    for (const v of this.templateSrv.getVariables()) {
+      const values = this.expandText('$' + v.name, {}).filter((x) => x && !x.startsWith('$'));
+      if (values.length > 0 && values.every((x) => uris.has(x))) {
+        out.push({ name: v.name, values });
       }
     }
     return out;
@@ -208,5 +253,10 @@ export class DataSource extends DataSourceWithBackend<AtlasQuery, AtlasOptions> 
 
   private expand(s: string): string {
     return s ? this.templateSrv.replace(s) : s;
+  }
+
+  /** Dashboard variables in s replaced by their current values, comma-separated. */
+  expandList(s: string): string {
+    return s ? this.templateSrv.replace(s, undefined, 'csv') : s;
   }
 }
