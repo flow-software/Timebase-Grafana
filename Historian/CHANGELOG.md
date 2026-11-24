@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.0 (2026-11-24)
+
+Breaking: the plugin ID is now `flowsoftware-timebasehistorian-datasource` (was `flowsoftware-timebase-datasource`), so the ID says which Timebase product it reads. It installs as a new plugin: data sources, dashboards and alert rules made with 2.x have to be recreated or pointed at the new type, and the `allow_loading_unsigned_plugins` setting needs the new ID.
+
+- Tree browser in the Timebase look, matching the Atlas data source: the Timebase logo in the title, ticked tags and folders highlighted in Timebase blue, field filter chips in Timebase blue, a line of help above the tree, and a footer with a **Clear** button.
+
 ## 2.1.0 (2026-10-22)
 
 - Tree browser: field filters are kept when the browser is closed and reopened, and are shared by every query editor using the same data source, for the rest of the browser session. A kept filter on a field the tags no longer have is ignored rather than hiding every tag.

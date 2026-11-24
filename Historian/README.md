@@ -42,7 +42,7 @@ docker compose -f docker-compose.yaml -f docker-compose.timebase.yaml up -d --bu
 Remove-Item Env:TIMEBASE_CLIENT_SECRET
 ```
 
-To rebuild the backend, stop the dev Grafana first (`docker stop flowsoftware-timebase-datasource`), build, then `docker start` it. While it runs, Grafana holds `dist/gpx_timebase_linux_amd64` open and, on a Windows bind mount, the build fails to overwrite it with `cannot allocate memory`. The frontend is picked up on a browser refresh.
+To rebuild the backend, stop the dev Grafana first (`docker stop flowsoftware-timebasehistorian-datasource`), build, then `docker start` it. While it runs, Grafana holds `dist/gpx_timebase_linux_amd64` open and, on a Windows bind mount, the build fails to overwrite it with `cannot allocate memory`. The frontend is picked up on a browser refresh.
 
 To package shareable zips (with `INSTALL.md` inside each), run `scripts/package.py` after a full build; see the command at the top of that file.
 

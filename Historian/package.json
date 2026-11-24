@@ -1,6 +1,6 @@
 {
-  "name": "timebase-datasource",
-  "version": "2.1.0",
+  "name": "timebasehistorian-datasource",
+  "version": "3.0.0",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",

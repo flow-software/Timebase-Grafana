@@ -6,7 +6,7 @@ apiVersion: 1
 # passed in as an environment variable and never written to a file.
 datasources:
   - name: 'Timebase i3X'
-    type: 'flowsoftware-timebase-datasource'
+    type: 'flowsoftware-timebasehistorian-datasource'
     uid: 'timebase-i3x-dev'
     access: proxy
     orgId: 1
@@ -23,7 +23,7 @@ datasources:
       clientSecret: '${TIMEBASE_CLIENT_SECRET}'
 
   - name: 'Timebase (native)'
-    type: 'flowsoftware-timebase-datasource'
+    type: 'flowsoftware-timebasehistorian-datasource'
     uid: 'timebase-native-dev'
     access: proxy
     isDefault: true

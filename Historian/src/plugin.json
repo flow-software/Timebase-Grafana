@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "datasource",
   "name": "Timebase Historian",
-  "id": "flowsoftware-timebase-datasource",
+  "id": "flowsoftware-timebasehistorian-datasource",
   "metrics": true,
   "alerting": true,
   "streaming": true,

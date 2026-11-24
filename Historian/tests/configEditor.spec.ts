@@ -8,7 +8,7 @@ test('smoke: should render config editor', async ({ createDataSourceConfigPage, 
 });
 
 test('"Save & test" should fail and name the missing setting', async ({ createDataSourceConfigPage, page }) => {
-  const configPage = await createDataSourceConfigPage({ type: 'flowsoftware-timebase-datasource' });
+  const configPage = await createDataSourceConfigPage({ type: 'flowsoftware-timebasehistorian-datasource' });
   await page.getByPlaceholder('https://historian:4512/i3x/v1').fill('https://historian:4512/i3x/v1');
   await expect(configPage.saveAndTest()).not.toBeOK();
   await expect(configPage).toHaveAlert('error', { hasText: 'token URL is required' });

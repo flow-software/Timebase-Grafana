@@ -1,7 +1,7 @@
 services:
   grafana:
     user: root
-    container_name: 'flowsoftware-timebase-datasource'
+    container_name: 'flowsoftware-timebasehistorian-datasource'
 
     build:
       context: .
@@ -19,13 +19,13 @@ services:
     cap_add:
       - SYS_PTRACE
     volumes:
-      - ../dist:/var/lib/grafana/plugins/flowsoftware-timebase-datasource
+      - ../dist:/var/lib/grafana/plugins/flowsoftware-timebasehistorian-datasource
       - ../provisioning:/etc/grafana/provisioning
-      - ..:/root/flowsoftware-timebase-datasource
+      - ..:/root/flowsoftware-timebasehistorian-datasource
 
     environment:
       NODE_ENV: development
-      GF_LOG_FILTERS: plugin.flowsoftware-timebase-datasource:debug
+      GF_LOG_FILTERS: plugin.flowsoftware-timebasehistorian-datasource:debug
       GF_LOG_LEVEL: debug
       GF_DATAPROXY_LOGGING: 1
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: flowsoftware-timebase-datasource
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: flowsoftware-timebasehistorian-datasource

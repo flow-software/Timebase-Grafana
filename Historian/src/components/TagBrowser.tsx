@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { css } from '@emotion/css';
-import { GrafanaTheme2 } from '@grafana/data';
+import { colorManipulator, GrafanaTheme2 } from '@grafana/data';
 import {
   Button,
   Checkbox,
@@ -18,6 +18,10 @@ import { FieldFacet, fieldFacets, FieldPicks, matchesPicks } from '../fieldFacet
 import { systemTagMatcher } from '../systemTags';
 import { buildTree, filterTree, pruneEmpty, TreeNode } from '../tree';
 import { ObjectOption } from '../types';
+import { timebase } from './timebase';
+
+const LOGO = 'public/plugins/flowsoftware-timebasehistorian-datasource/img/logo.svg';
+const TITLE = 'Tree browser';
 
 interface Props {
   isOpen: boolean;
@@ -143,7 +147,18 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, init
   const pickedInTree = tree.flatMap((n) => n.tagIds).filter((id) => checked.has(id)).length;
 
   return (
-    <Modal title="Tree browser" isOpen={isOpen} onDismiss={onDismiss} className={styles.modal}>
+    <Modal
+      title={
+        <span className={styles.title}>
+          <img src={LOGO} alt="" className={styles.logo} />
+          {TITLE}
+        </span>
+      }
+      ariaLabel={TITLE}
+      isOpen={isOpen}
+      onDismiss={onDismiss}
+      className={styles.modal}
+    >
       <div className={styles.toolbar}>
         <div className={styles.search}>
           <FilterInput placeholder="Search tags and folders" value={search} onChange={setSearch} autoFocus />
@@ -199,6 +214,11 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, init
         </div>
       )}
 
+      <div className={styles.summary}>
+        {searching
+          ? `${visible.reduce((n, t) => n + t.tagIds.length, 0)} matching tags`
+          : 'Tick a tag, or a folder for every tag in it. Open a folder to pick single tags.'}
+      </div>
       <div
         className={styles.list}
         role="tree"
@@ -221,7 +241,7 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, init
               aria-level={depth + 1}
               aria-expanded={node.isTag ? undefined : isOpenNode}
               aria-selected={all}
-              className={styles.row}
+              className={all ? `${styles.row} ${styles.selected}` : styles.row}
               style={{ paddingLeft: depth * 20 }}
               title={
                 [node.elementId, info?.description, fieldsText(info?.fields)].filter(Boolean).join(' · ') || undefined
@@ -244,7 +264,10 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, init
                 aria-label={`Select ${node.label}`}
                 onChange={() => setTags(node.tagIds, !all)}
               />
-              <Icon name={node.isTag ? 'chart-line' : isOpenNode ? 'folder-open' : 'folder'} className={styles.icon} />
+              <Icon
+                name={node.isTag ? 'chart-line' : isOpenNode ? 'folder-open' : 'folder'}
+                className={node.isTag ? styles.tagIcon : styles.icon}
+              />
               <span
                 className={styles.label}
                 onClick={() => (node.isTag ? setTags(node.tagIds, !all) : !searching && toggleExpanded(node.key))}
@@ -264,9 +287,14 @@ export function TagBrowser({ isOpen, objects, selected, onApply, onDismiss, init
 
       <Modal.ButtonRow
         leftItems={
-          <span className={styles.count}>
-            {pickedInTree} of {tagCount} tags selected
-          </span>
+          <div className={styles.footer}>
+            <span>{pickedInTree === 0 ? 'Nothing selected' : `${pickedInTree} of ${tagCount} tags selected`}</span>
+            {checked.size > 0 && (
+              <Button size="sm" variant="secondary" fill="text" onClick={() => setChecked(new Set())}>
+                Clear
+              </Button>
+            )}
+          </div>
         }
       >
         <Button variant="secondary" fill="outline" onClick={onDismiss}>
@@ -367,75 +395,99 @@ function FieldFilterRow({
   );
 }
 
-const getStyles = (theme: GrafanaTheme2) => ({
-  filters: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(0.5), marginTop: theme.spacing(1) }),
-  filterRow: css({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: theme.spacing(0.5) }),
-  filterLabel: css({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: theme.spacing(0.5),
-    width: theme.spacing(16),
-    flexShrink: 0,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    color: theme.colors.text.secondary,
-    fontSize: theme.typography.bodySmall.fontSize,
-  }),
-  filterCombo: css({ flex: 1, minWidth: 0 }),
-  chip: css({
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: theme.spacing(0.75),
-    padding: theme.spacing(0.25, 1),
-    fontSize: theme.typography.bodySmall.fontSize,
-    color: theme.colors.text.secondary,
-    background: 'transparent',
-    border: `1px solid ${theme.colors.border.medium}`,
-    borderRadius: theme.shape.radius.pill,
-    cursor: 'pointer',
-    '&:hover': { background: theme.colors.action.hover, color: theme.colors.text.primary },
-  }),
-  chipOn: css({
-    color: theme.colors.text.primary,
-    background: theme.colors.action.selected,
-    borderColor: theme.colors.primary.border,
-  }),
-  chipCount: css({ color: theme.colors.text.disabled }),
-  modal: css({ width: '760px', maxWidth: '95vw' }),
-  toolbar: css({ display: 'flex', alignItems: 'center', gap: theme.spacing(1) }),
-  search: css({ flex: 1, minWidth: 0 }),
-  list: css({
-    marginTop: theme.spacing(1),
-    height: '55vh',
-    minHeight: theme.spacing(25),
-    overflowY: 'auto',
-    border: `1px solid ${theme.colors.border.weak}`,
-    borderRadius: theme.shape.radius.default,
-    padding: theme.spacing(0.5, 0),
-  }),
-  row: css({
-    display: 'flex',
-    alignItems: 'center',
-    gap: theme.spacing(1),
-    minHeight: theme.spacing(4),
-    paddingRight: theme.spacing(1),
-    '&:hover': { background: theme.colors.action.hover },
-  }),
-  chevronSpace: css({ width: theme.spacing(2), flexShrink: 0 }),
-  icon: css({ color: theme.colors.text.secondary, flexShrink: 0 }),
-  label: css({
-    cursor: 'pointer',
-    flexGrow: 1,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  }),
-  count: css({ color: theme.colors.text.secondary, fontSize: theme.typography.bodySmall.fontSize, flexShrink: 0 }),
-  description: css({
-    marginLeft: theme.spacing(1.5),
-    color: theme.colors.text.secondary,
-    fontSize: theme.typography.bodySmall.fontSize,
-  }),
-  empty: css({ padding: theme.spacing(2), color: theme.colors.text.secondary }),
-});
+const getStyles = (theme: GrafanaTheme2) => {
+  const tb = timebase(theme);
+  return {
+    title: css({ display: 'inline-flex', alignItems: 'center', gap: theme.spacing(1) }),
+    logo: css({ width: 22, height: 22 }),
+    summary: css({
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+      margin: theme.spacing(1, 0, 0.5),
+    }),
+    selected: css({
+      background: colorManipulator.alpha(tb.blue, 0.12),
+      boxShadow: `inset 3px 0 0 ${tb.blue}`,
+      '&:hover': { background: colorManipulator.alpha(tb.blue, 0.18) },
+    }),
+    tagIcon: css({ color: tb.blue, flexShrink: 0 }),
+    footer: css({
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing(1),
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+    }),
+    filters: css({ display: 'flex', flexDirection: 'column', gap: theme.spacing(0.5), marginTop: theme.spacing(1) }),
+    filterRow: css({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: theme.spacing(0.5) }),
+    filterLabel: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: theme.spacing(0.5),
+      width: theme.spacing(16),
+      flexShrink: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+    }),
+    filterCombo: css({ flex: 1, minWidth: 0 }),
+    chip: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: theme.spacing(0.75),
+      padding: theme.spacing(0.25, 1),
+      fontSize: theme.typography.bodySmall.fontSize,
+      color: theme.colors.text.secondary,
+      background: 'transparent',
+      border: `1px solid ${theme.colors.border.medium}`,
+      borderRadius: theme.shape.radius.pill,
+      cursor: 'pointer',
+      '&:hover': { background: theme.colors.action.hover, color: theme.colors.text.primary },
+    }),
+    chipOn: css({
+      color: tb.text,
+      background: colorManipulator.alpha(tb.blue, 0.1),
+      borderColor: colorManipulator.alpha(tb.blue, 0.6),
+      '&:hover': { background: colorManipulator.alpha(tb.blue, 0.18), color: tb.text },
+    }),
+    chipCount: css({ color: theme.colors.text.disabled }),
+    modal: css({ width: 860, maxWidth: '95vw' }),
+    toolbar: css({ display: 'flex', alignItems: 'center', gap: theme.spacing(1) }),
+    search: css({ flex: 1, minWidth: 0 }),
+    list: css({
+      height: '55vh',
+      minHeight: theme.spacing(25),
+      overflowY: 'auto',
+      border: `1px solid ${theme.colors.border.weak}`,
+      borderRadius: theme.shape.radius.default,
+      padding: theme.spacing(0.5),
+    }),
+    row: css({
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing(1),
+      minHeight: theme.spacing(4),
+      paddingRight: theme.spacing(1),
+      borderRadius: theme.shape.radius.default,
+      '&:hover': { background: theme.colors.action.hover },
+    }),
+    chevronSpace: css({ width: theme.spacing(2), flexShrink: 0 }),
+    icon: css({ color: theme.colors.text.secondary, flexShrink: 0 }),
+    label: css({
+      cursor: 'pointer',
+      flexGrow: 1,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    }),
+    count: css({ color: theme.colors.text.secondary, fontSize: theme.typography.bodySmall.fontSize, flexShrink: 0 }),
+    description: css({
+      marginLeft: theme.spacing(1.5),
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+    }),
+    empty: css({ padding: theme.spacing(2), color: theme.colors.text.secondary }),
+  };
+};
