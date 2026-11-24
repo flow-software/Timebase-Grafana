@@ -39,7 +39,7 @@ const KIND_ICONS: Record<LiveProperty['kind'], IconName> = {
   unknown: 'question-circle',
 };
 
-const LOGO = 'public/plugins/flowsoftware-atlas-datasource/img/logo.svg';
+const LOGO = 'public/plugins/flowsoftware-timebaseatlas-datasource/img/logo.svg';
 
 interface Props {
   isOpen: boolean;

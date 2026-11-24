@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 (2026-11-24)
+
+Breaking: the plugin ID is now `flowsoftware-timebaseatlas-datasource` (was `flowsoftware-atlas-datasource`), so both Timebase plugins read as Timebase products (the Historian's is `flowsoftware-timebasehistorian-datasource`). It installs as a new plugin: data sources and dashboards made with 0.2.0 have to be recreated or pointed at the new type, and the `allow_loading_unsigned_plugins` setting needs the new ID.
+
 ## 0.2.0 (2026-11-24)
 
 - Values and History merged into one **Data** tab: one selection, shown as **Current** values (table) or a **Trend** (time series). The selection can hold an instance with everything nested under it, and every instance of a type (Types view), both resolved when the query runs; older Values and History queries open as the matching selection. The picker uses Timebase colours for selections and property kinds.

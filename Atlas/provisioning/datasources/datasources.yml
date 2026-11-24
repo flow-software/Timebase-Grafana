@@ -6,7 +6,7 @@ apiVersion: 1
 # environment variable and never written to a file.
 datasources:
   - name: 'Timebase Atlas (dev)'
-    type: 'flowsoftware-atlas-datasource'
+    type: 'flowsoftware-timebaseatlas-datasource'
     uid: 'atlas-dev'
     access: proxy
     isDefault: true

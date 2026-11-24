@@ -19,7 +19,7 @@ import { DataSource } from '../datasource';
 import { RelationshipColor, SelectionVariable } from '../types';
 import { timebase } from './timebase';
 
-const LOGO = 'public/plugins/flowsoftware-atlas-datasource/img/logo.svg';
+const LOGO = 'public/plugins/flowsoftware-timebaseatlas-datasource/img/logo.svg';
 
 interface Props {
   datasource: DataSource;

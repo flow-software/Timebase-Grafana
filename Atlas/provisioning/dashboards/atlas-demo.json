@@ -2,7 +2,7 @@
   "panels": [
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -16,7 +16,7 @@
         {
           "colorBy": "quality",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "depth": 1,
@@ -34,7 +34,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -48,7 +48,7 @@
         {
           "colorBy": "type",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "depth": 1,
@@ -63,7 +63,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -76,7 +76,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "instanceId": "$machine",
@@ -90,7 +90,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -103,7 +103,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "entityType": "CNCMachine",
@@ -118,7 +118,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -132,7 +132,7 @@
         {
           "colorBy": "type",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "depth": 1,
@@ -149,7 +149,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "fieldConfig": {
@@ -172,7 +172,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "history",
@@ -211,7 +211,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "fieldConfig": {
@@ -234,7 +234,7 @@
       "targets": [
         {
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "includeMinMax": true,
@@ -257,7 +257,7 @@
     },
     {
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "fieldConfig": {
@@ -281,7 +281,7 @@
         {
           "cypher": "MATCH (n:CNCProduction) WHERE n.entityId = \"CNC01-Production\"\nUNWIND n.SpindleTemp AS v\nWITH n, v WHERE v.Timestamp >= datetime($from) AND v.Timestamp < datetime($to)\nRETURN v.Timestamp AS time, v.Value AS SpindleTemp ORDER BY time",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "format": "table",
@@ -298,7 +298,7 @@
       "title": "Status: job, program and alarm on $machines",
       "description": "Data > Trend, Raw, of JobNumber, Program and AlarmActive of every CNCProduction under $machines (picked in the Select modal under the $machines variable).",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -311,7 +311,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "history",
@@ -446,7 +446,7 @@
       "title": "$prop on $machines (Auto: time-weighted, keeps stops and spikes)",
       "description": "Picked in the Select modal: $machines > Production > $prop.",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -459,7 +459,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "history",
@@ -498,7 +498,7 @@
       "title": "Hourly FeedRate on $machines, time-weighted",
       "description": "Hour buckets. Each value counts for as long as it held, so an hour the machine spent stopped averages low even when the stop was recorded only once.",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "gridPos": {
@@ -511,7 +511,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "history",
@@ -550,7 +550,7 @@
       "id": 14,
       "type": "state-timeline",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "title": "Controller mode on $machines (labels from the Atlas enumeration)",
@@ -565,7 +565,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "history",
@@ -611,7 +611,7 @@
       "id": 15,
       "type": "table",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "title": "Current controller mode (Value label column)",
@@ -625,7 +625,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "values",
@@ -652,7 +652,7 @@
       "id": 16,
       "type": "table",
       "datasource": {
-        "type": "flowsoftware-atlas-datasource",
+        "type": "flowsoftware-timebaseatlas-datasource",
         "uid": "atlas-dev"
       },
       "title": "CNC machines now in ${mode:text}",
@@ -667,7 +667,7 @@
         {
           "refId": "A",
           "datasource": {
-            "type": "flowsoftware-atlas-datasource",
+            "type": "flowsoftware-timebaseatlas-datasource",
             "uid": "atlas-dev"
           },
           "queryType": "cypher",
@@ -717,7 +717,7 @@
     "list": [
       {
         "datasource": {
-          "type": "flowsoftware-atlas-datasource",
+          "type": "flowsoftware-timebaseatlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "machine",
@@ -745,7 +745,7 @@
       },
       {
         "datasource": {
-          "type": "flowsoftware-atlas-datasource",
+          "type": "flowsoftware-timebaseatlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "machines",
@@ -777,7 +777,7 @@
       },
       {
         "datasource": {
-          "type": "flowsoftware-atlas-datasource",
+          "type": "flowsoftware-timebaseatlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "prop",
@@ -809,7 +809,7 @@
       },
       {
         "datasource": {
-          "type": "flowsoftware-atlas-datasource",
+          "type": "flowsoftware-timebaseatlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "mode",
@@ -836,7 +836,7 @@
       },
       {
         "datasource": {
-          "type": "flowsoftware-atlas-datasource",
+          "type": "flowsoftware-timebaseatlas-datasource",
           "uid": "atlas-dev"
         },
         "name": "rels",

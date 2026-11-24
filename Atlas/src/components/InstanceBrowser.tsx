@@ -7,7 +7,7 @@ import { ancestorsOf, buildTree, filterTree, nodeName, TreeItem } from '../tree'
 import { SelectionVariable, TreeNodeData } from '../types';
 import { timebase } from './timebase';
 
-const LOGO = 'public/plugins/flowsoftware-atlas-datasource/img/logo.svg';
+const LOGO = 'public/plugins/flowsoftware-timebaseatlas-datasource/img/logo.svg';
 
 interface Props {
   isOpen: boolean;

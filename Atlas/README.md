@@ -39,11 +39,11 @@ $env:ATLAS_CLIENT_SECRET = "<Atlas client secret>"
 docker compose -f docker-compose.yaml -f docker-compose.timebase.yaml up -d --build
 ```
 
-It uses port 3000, so it cannot run next to the shared dev Grafana (container `flowsoftware-timebase-datasource`). That one runs in development mode, which loads unsigned plugins, and during development the plugin was copied into its data volume instead:
+It uses port 3000, so it cannot run next to the shared dev Grafana (container `flowsoftware-timebasehistorian-datasource`). That one runs in development mode, which loads unsigned plugins, and during development the plugin was copied into its data volume instead:
 
 ```powershell
-docker cp dist/. flowsoftware-timebase-datasource:/var/lib/grafana/plugins/flowsoftware-atlas-datasource
-docker restart flowsoftware-timebase-datasource
+docker cp dist/. flowsoftware-timebasehistorian-datasource:/var/lib/grafana/plugins/flowsoftware-timebaseatlas-datasource
+docker restart flowsoftware-timebasehistorian-datasource
 ```
 
 ## CI

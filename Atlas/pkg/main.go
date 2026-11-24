@@ -11,7 +11,7 @@ import (
 func main() {
 	// Blocks until Grafana stops the plugin. One Datasource instance is built
 	// per configured datasource and rebuilt when its settings change.
-	if err := datasource.Manage("flowsoftware-atlas-datasource", plugin.NewDatasource, datasource.ManageOpts{}); err != nil {
+	if err := datasource.Manage("flowsoftware-timebaseatlas-datasource", plugin.NewDatasource, datasource.ManageOpts{}); err != nil {
 		log.DefaultLogger.Error(err.Error())
 		os.Exit(1)
 	}

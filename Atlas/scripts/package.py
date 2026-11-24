@@ -12,7 +12,7 @@ import json
 import os
 import zipfile
 
-PLUGIN_ID = "flowsoftware-atlas-datasource"
+PLUGIN_ID = "flowsoftware-timebaseatlas-datasource"
 DIST, OUT = "dist", "artifacts"
 
 
