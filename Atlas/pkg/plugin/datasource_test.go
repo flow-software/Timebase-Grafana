@@ -700,9 +700,10 @@ func TestPeakLineSmoothsNoiseKeepsEvents(t *testing.T) {
 		if p.v == nil {
 			t.Fatal("no gaps in this data")
 		}
-		if *p.v == 0 {
+		switch *p.v {
+		case 0:
 			sawStop = true
-		} else if *p.v == 100 || *p.v == 110 {
+		case 100, 110:
 			t.Fatalf("noise should be averaged, got %v", *p.v)
 		}
 	}
